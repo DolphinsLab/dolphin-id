@@ -18,9 +18,24 @@ create_issue() {
   local title
   local labels
   local milestone
+  local existing_url
   title="$(sed -n '1s/^# //p' "$file")"
-  labels="$(sed -n '3s/^Labels: //p' "$file" | tr -d '`')"
+  labels="$(sed -n '3s/^Labels: //p' "$file" | tr -d '`' | tr -d ' ')"
   milestone="$(sed -n '5s/^Milestone: //p' "$file")"
+  existing_url="$(
+    gh issue list \
+      --repo "$repo" \
+      --state all \
+      --limit 1000 \
+      --json title,url \
+      --jq ".[] | select(.title == \"$title\") | .url"
+  )"
+
+  if [[ -n "$existing_url" ]]; then
+    echo "Skip existing issue: $title ($existing_url)"
+    return
+  fi
+
   gh issue create \
     --repo "$repo" \
     --title "$title" \
