@@ -1,0 +1,30 @@
+name: Bug
+description: Track a Dolphin ID defect
+title: "DID-000: "
+labels: ["type:bug", "status:ready"]
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Current behavior
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      value: |
+        - [ ] 
+        - [ ]

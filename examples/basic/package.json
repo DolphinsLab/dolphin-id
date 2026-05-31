@@ -1,0 +1,15 @@
+{
+  "name": "@dolphin-id/example-basic",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@dolphin-id/adapter-evm": "workspace:*",
+    "@dolphin-id/adapter-sui": "workspace:*"
+  }
+}
