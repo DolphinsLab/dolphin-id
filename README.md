@@ -16,6 +16,22 @@ repository is organized as a pnpm workspace with scoped packages under
 | `packages/server`      | `@dolphin-id/server`        | Node.js auth, nonce, verification, and session utilities |
 | `examples/basic`       | `@dolphin-id/example-basic` | Minimal integration playground                           |
 
+## Package Boundaries
+
+`@dolphin-id/core` is the only package that defines chain-neutral public
+contracts: `ChainAdapter`, `Wallet`, `Account`, `ChainType`, SIWX message types,
+connection requests, signing requests, and adapter events. It must not import
+EVM, Sui, Solana, wallet, React, server, or UI SDKs.
+
+Chain-specific packages such as `@dolphin-id/adapter-evm` and
+`@dolphin-id/adapter-sui` implement the core contracts. Address normalization is
+an adapter responsibility through `normalizeAddress`, because each chain owns its
+own address format and display rules.
+
+`@dolphin-id/react` and `@dolphin-id/ui` consume core contracts for frontend
+state and components. `@dolphin-id/server` consumes SIWX and account contracts
+for nonce, verification, and session flows.
+
 ## Local Development
 
 Install dependencies:
