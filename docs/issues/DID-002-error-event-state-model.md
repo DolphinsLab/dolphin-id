@@ -10,10 +10,10 @@ Create a typed error and event model shared across adapters, React hooks, UI, an
 
 ## Acceptance criteria
 
-- [ ] Errors include code, stage, chain type, wallet name when available, and recoverability.
-- [ ] Wallet connection, account change, chain change, sign-in, session, and disconnect events are typed.
-- [ ] React-facing state can distinguish idle, loading, connected, signed-in, failed, and expired states.
-- [ ] Unit tests cover error creation and event normalization.
+- [x] Errors include code, stage, chain type, wallet name when available, and recoverability.
+- [x] Wallet connection, account change, chain change, sign-in, session, and disconnect events are typed.
+- [x] React-facing state can distinguish idle, loading, connected, signed-in, failed, and expired states.
+- [x] Unit tests cover error creation and event normalization.
 
 ## Blocked by
 
