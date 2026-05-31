@@ -1,0 +1,35 @@
+name: Feature
+description: Track a Dolphin ID feature slice
+title: "DID-000: "
+labels: ["type:feature", "status:ready"]
+body:
+  - type: textarea
+    id: what-to-build
+    attributes:
+      label: What to build
+      description: Describe the end-to-end behavior this slice delivers.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Use checkboxes.
+      value: |
+        - [ ] 
+        - [ ] 
+        - [ ]
+    validations:
+      required: true
+  - type: textarea
+    id: blocked-by
+    attributes:
+      label: Blocked by
+      value: "None - can start immediately"
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification notes
+      description: How should reviewers verify this issue?
