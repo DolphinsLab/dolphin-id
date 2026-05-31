@@ -32,6 +32,10 @@ own address format and display rules.
 state and components. `@dolphin-id/server` consumes SIWX and account contracts
 for nonce, verification, and session flows.
 
+Errors, events, and React-facing state also live in `@dolphin-id/core` so
+adapters, hooks, UI, and server calls report failures and lifecycle transitions
+with the same codes, stages, recoverability flags, and state statuses.
+
 ## Local Development
 
 Install dependencies:
