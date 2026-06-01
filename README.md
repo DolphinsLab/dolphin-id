@@ -32,6 +32,10 @@ own address format and display rules.
 state and components. `@dolphin-id/server` consumes SIWX and account contracts
 for nonce, verification, and session flows.
 
+`@dolphin-id/server` exposes the self-hosted auth core: nonce issue/consume,
+in-memory and Redis nonce stores, address-as-user repositories, SIWX verification
+orchestration, and configurable seven-day-by-default JWT sessions.
+
 ## Local Development
 
 Install dependencies:
