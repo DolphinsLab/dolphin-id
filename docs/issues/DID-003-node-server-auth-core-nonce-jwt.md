@@ -10,11 +10,11 @@ Build the self-hosted Node.js server core for nonce generation, nonce storage, S
 
 ## Acceptance criteria
 
-- [ ] Server SDK exposes nonce issue, nonce consume, verify sign-in, and session issue APIs.
-- [ ] Redis nonce store and in-memory development nonce store are available.
-- [ ] JWT expiration defaults to 7 days and is configurable.
-- [ ] User repository interface supports address-as-user creation and lookup.
-- [ ] Tests cover nonce expiry, nonce reuse rejection, and session creation.
+- [x] Server SDK exposes nonce issue, nonce consume, verify sign-in, and session issue APIs.
+- [x] Redis nonce store and in-memory development nonce store are available.
+- [x] JWT expiration defaults to 7 days and is configurable.
+- [x] User repository interface supports address-as-user creation and lookup.
+- [x] Tests cover nonce expiry, nonce reuse rejection, and session creation.
 
 ## Blocked by
 
