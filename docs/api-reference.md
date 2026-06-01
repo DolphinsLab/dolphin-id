@@ -67,6 +67,8 @@ hooks.
 - `verifyJwtSession`: HS256 JWT verification for session-protected routes.
 - `verifyEvmSiweMessage`: verifies EVM EIP-4361 SIWE messages.
 - `verifySuiPersonalMessage`: verifies Sui personal-message signatures.
+- `verifySolanaSiwsMessage`: verifies Solana SIWS messages and Ed25519
+  signatures against the base58 account public key.
 - `createAuthRouteHandlers`: framework-neutral nonce, verify, refresh, me,
   logout, and require-session handlers.
 - `createExpressAuthRoutes`: Express-like route handlers for the auth flow.
@@ -82,6 +84,8 @@ hooks.
   normalization.
 - `@dolphin-id/adapter-sui`: Wallet Standard-style discovery and connection, Sui
   personal-message construction/signing, and Sui address normalization.
+- `@dolphin-id/adapter-solana`: Wallet Standard-style discovery and connection,
+  Solana SIWS construction/signing, and base58 address normalization.
 
 ## Third-party Adapters
 

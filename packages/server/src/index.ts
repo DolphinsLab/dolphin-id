@@ -1,8 +1,10 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
+import { ed25519 } from "@noble/curves/ed25519";
 import { normalizeSuiAddress } from "@mysten/sui/utils";
 import { verifyPersonalMessageSignature } from "@mysten/sui/verify";
 import type { ChainType, SiwxMessage } from "@dolphin-id/core";
+import { base58 } from "@scure/base";
 import { getAddress, verifyMessage, type Address, type Hex } from "viem";
 import { createSiweMessage } from "viem/siwe";
 
@@ -496,6 +498,13 @@ export interface EvmSiweVerificationOptions {
   readonly now?: Date;
 }
 
+export interface SolanaSiwsVerificationOptions {
+  readonly expectedDomain?: string;
+  readonly expectedAddress?: string;
+  readonly expectedChainId?: string;
+  readonly now?: Date;
+}
+
 export interface VerifySignInRequest {
   readonly message: SiwxMessage;
   readonly signature: string;
@@ -711,7 +720,9 @@ export function createServerAuth(options: ServerAuthOptions): ServerAuth {
         issuedAt: now,
         expiresAt: new Date(now.getTime() + (issueOptions.ttlMs ?? nonceTtlMs)),
         ...(issueOptions.domain ? { domain: issueOptions.domain } : {}),
-        ...(issueOptions.address ? { address: normalizeAddress(issueOptions.address) } : {}),
+        ...(issueOptions.address
+          ? { address: normalizeAddress(issueOptions.address, issueOptions.chainType) }
+          : {}),
         ...(issueOptions.chainType ? { chainType: issueOptions.chainType } : {}),
         ...(issueOptions.walletName ? { walletName: issueOptions.walletName } : {}),
         ...(issueOptions.metadata ? { metadata: issueOptions.metadata } : {})
@@ -1155,6 +1166,71 @@ export async function verifySuiPersonalMessage(
   return { ok: true, subject: address };
 }
 
+export async function verifySolanaSiwsMessage(
+  request: VerificationRequest,
+  options: SolanaSiwsVerificationOptions = {}
+): Promise<VerificationResult> {
+  const message = request.message;
+
+  if (message.chainType !== "solana") {
+    return { ok: false, reason: "Solana message chain type must be solana." };
+  }
+
+  if (message.nonce !== request.nonce) {
+    return { ok: false, reason: "Solana nonce mismatch." };
+  }
+
+  if (options.expectedDomain && message.domain !== options.expectedDomain) {
+    return { ok: false, reason: "Solana domain mismatch." };
+  }
+
+  if (options.expectedChainId && message.chainId !== options.expectedChainId) {
+    return { ok: false, reason: "Solana chain identifier mismatch." };
+  }
+
+  let address: string;
+  let publicKey: Uint8Array;
+
+  try {
+    address = normalizeSolanaAddress(message.address);
+    publicKey = base58.decode(address);
+  } catch {
+    return { ok: false, reason: "Solana address is invalid." };
+  }
+
+  if (options.expectedAddress && address !== normalizeSolanaAddress(options.expectedAddress)) {
+    return { ok: false, reason: "Solana address mismatch." };
+  }
+
+  if (!message.expirationTime) {
+    return { ok: false, reason: "Solana expirationTime is required." };
+  }
+
+  if (new Date(message.expirationTime).getTime() <= (options.now ?? new Date()).getTime()) {
+    return { ok: false, reason: "Solana message expired." };
+  }
+
+  let signature: Uint8Array;
+
+  try {
+    signature = base58.decode(request.signature);
+  } catch {
+    return { ok: false, reason: "Solana signature is invalid." };
+  }
+
+  const valid = ed25519.verify(
+    signature,
+    new TextEncoder().encode(rawSolanaSiwsMessage(message)),
+    publicKey
+  );
+
+  if (!valid) {
+    return { ok: false, reason: "Solana signature is invalid." };
+  }
+
+  return { ok: true, subject: address };
+}
+
 export async function verifyEvmSiweMessage(
   request: VerificationRequest,
   options: EvmSiweVerificationOptions = {}
@@ -1281,19 +1357,23 @@ function encodeJson(value: Readonly<Record<string, unknown>>): string {
   return Buffer.from(JSON.stringify(value)).toString("base64url");
 }
 
-function normalizeAddress(address: string): string {
+function normalizeAddress(address: string, chainType?: ChainType): string {
+  if (chainType === "solana") {
+    return normalizeSolanaAddress(address);
+  }
+
   return address.toLowerCase();
 }
 
 function userAccountKey(account: UserAccount): string {
-  return `${account.chainType}:${account.chainId}:${normalizeAddress(account.address)}`;
+  return `${account.chainType}:${account.chainId}:${normalizeAddress(account.address, account.chainType)}`;
 }
 
 function accountFromSiwxMessage(message: SiwxMessage): UserAccount {
   return {
     chainType: message.chainType,
     chainId: message.chainId,
-    address: normalizeAddress(message.address)
+    address: normalizeAddress(message.address, message.chainType)
   };
 }
 
@@ -1415,6 +1495,35 @@ function rawEvmSiweMessage(message: SiwxMessage): string {
   });
 }
 
+function rawSolanaSiwsMessage(message: SiwxMessage): string {
+  if (message.raw) {
+    return message.raw;
+  }
+
+  return [
+    `${message.domain} wants you to sign in with your Solana account:`,
+    normalizeSolanaAddress(message.address),
+    ...(message.statement ? ["", message.statement] : []),
+    "",
+    `URI: ${message.uri}`,
+    "Version: 1",
+    `Chain ID: solana:${message.chainId}`,
+    `Nonce: ${message.nonce}`,
+    `Issued At: ${message.issuedAt}`,
+    ...(message.expirationTime ? [`Expiration Time: ${message.expirationTime}`] : [])
+  ].join("\n");
+}
+
+function normalizeSolanaAddress(address: string): string {
+  const bytes = base58.decode(address);
+
+  if (bytes.length !== 32) {
+    throw new Error("Invalid Solana address.");
+  }
+
+  return base58.encode(bytes);
+}
+
 function assertNonceMatchesMessage(
   record: NonceRecord,
   message: SiwxMessage,
@@ -1428,7 +1537,7 @@ function assertNonceMatchesMessage(
     throw new Error("Nonce domain mismatch.");
   }
 
-  if (record.address && record.address !== normalizeAddress(message.address)) {
+  if (record.address && record.address !== normalizeAddress(message.address, message.chainType)) {
     throw new Error("Nonce address mismatch.");
   }
 

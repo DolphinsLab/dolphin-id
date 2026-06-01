@@ -13,6 +13,7 @@ repository is organized as a pnpm workspace with scoped packages under
 | `packages/ui`                  | `@dolphin-id/ui`                          | Default wallet connection UI components                  |
 | `packages/adapter-evm`         | `@dolphin-id/adapter-evm`                 | EVM wallet adapter package                               |
 | `packages/adapter-sui`         | `@dolphin-id/adapter-sui`                 | Sui wallet adapter package                               |
+| `packages/adapter-solana`      | `@dolphin-id/adapter-solana`              | Solana wallet adapter package                            |
 | `packages/server`              | `@dolphin-id/server`                      | Node.js auth, nonce, verification, and session utilities |
 | `packages/cli`                 | `@dolphin-id/cli`                         | App scaffolder for runnable Next.js integrations         |
 | `apps/docs`                    | `@dolphin-id/docs`                        | Public docs site and adapter development spec            |
@@ -36,10 +37,11 @@ contracts: `ChainAdapter`, `Wallet`, `Account`, `ChainType`, SIWX message types,
 connection requests, signing requests, and adapter events. It must not import
 EVM, Sui, Solana, wallet, React, server, or UI SDKs.
 
-Chain-specific packages such as `@dolphin-id/adapter-evm` and
-`@dolphin-id/adapter-sui` implement the core contracts. Address normalization is
-an adapter responsibility through `normalizeAddress`, because each chain owns its
-own address format and display rules.
+Chain-specific packages such as `@dolphin-id/adapter-evm`,
+`@dolphin-id/adapter-sui`, and `@dolphin-id/adapter-solana` implement the core
+contracts. Address normalization is an adapter responsibility through
+`normalizeAddress`, because each chain owns its own address format and display
+rules.
 
 `@dolphin-id/react` and `@dolphin-id/ui` consume core contracts for frontend
 state and components. `@dolphin-id/server` consumes SIWX and account contracts
@@ -64,6 +66,10 @@ server-side SIWE signature verification.
 The Sui slice includes Wallet Standard-style discovery, connection and account
 events, personal-message sign-in payload construction, Sui address normalization,
 and server-side personal-message signature verification.
+
+The Solana slice includes Wallet Standard-style discovery, connection and
+account events, SIWS payload construction, Solana address normalization, message
+signing, and server-side Ed25519 signature verification.
 
 The React slice provides a headless `DolphinProvider`, wallet/account/session
 hooks, endpoint-backed auth client configuration, and UI-free EVM/Sui SIWX

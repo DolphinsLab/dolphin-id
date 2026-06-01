@@ -26,6 +26,9 @@ address-as-user lookup, and JWT session issuing.
   response objects.
 - `registerFastifyAuthRoutes` registers the reference auth routes on a
   Fastify-like instance.
+- `verifyEvmSiweMessage`, `verifySuiPersonalMessage`, and
+  `verifySolanaSiwsMessage` provide chain-specific SIWX signature verification
+  helpers.
 
 Production apps should provide a chain-specific `verifySiwx` implementation from
 the relevant adapter slice. The default verifier only rejects missing signatures
@@ -61,6 +64,12 @@ nonce, expiration, and the personal-message signature.
 Use `verifyEvmSiweMessage` as the `verifySiwx` implementation for EVM sign-in.
 It validates chain type, domain, address, chain ID, nonce, expiration, and the
 `personal_sign` signature over the SIWE message.
+
+## Solana SIWS Verification
+
+Use `verifySolanaSiwsMessage` as the `verifySiwx` implementation for Solana
+sign-in. It validates chain type, domain, base58 address ownership, chain
+identifier, nonce, expiration, and the Ed25519 signature over the SIWS message.
 
 ## Express And Fastify Helpers
 
