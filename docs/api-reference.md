@@ -84,6 +84,19 @@ hooks.
 - `assertProductionSafeUrl`: rejects production HTTP origins unless explicitly
   overridden.
 
+## Hosted Service
+
+`@dolphin-id/hosted` provides optional managed-service primitives while keeping
+self-hosted auth available.
+
+- `createHostedAuthService`: creates hosted `issueNonce`, `verifyLogin`,
+  `currentUser`, and `invalidateSession` operations around a `ServerAuth`.
+- `InMemoryHostedProjectStore`: development store for projects, API keys,
+  allowed domains, quota limits, and usage counts.
+- `InMemoryHostedAuditLogStore`: development audit log for nonce issue, verify
+  success/failure, session reads, and session invalidation.
+- `HostedBillingHook`: integration point for billing or metering systems.
+
 ## Adapter Packages
 
 - `@dolphin-id/adapter-evm`: EIP-6963/EIP-1193 wallet discovery and connection,
