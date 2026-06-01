@@ -49,18 +49,47 @@ export interface DolphinVerifyRequest {
 
 export interface DolphinSignInResponse {
   readonly session: SessionSnapshot;
+  readonly refreshToken?: DolphinRefreshTokenSnapshot;
   readonly user?: unknown;
   readonly verification?: unknown;
+}
+
+export interface DolphinRefreshTokenSnapshot {
+  readonly token: string;
+  readonly subject: string;
+  readonly issuedAt: string;
+  readonly expiresAt: string;
+}
+
+export interface DolphinRefreshRequest {
+  readonly refreshToken?: string;
+}
+
+export interface DolphinRefreshResponse {
+  readonly session: SessionSnapshot;
+  readonly refreshToken?: DolphinRefreshTokenSnapshot;
+}
+
+export interface DolphinLogoutRequest {
+  readonly refreshToken?: string;
+}
+
+export interface DolphinLogoutResponse {
+  readonly ok: boolean;
 }
 
 export interface DolphinAuthClient {
   issueNonce(request: DolphinNonceRequest): Promise<DolphinNonceResponse>;
   verifySignIn(request: DolphinVerifyRequest): Promise<DolphinSignInResponse>;
+  refreshSession?(request?: DolphinRefreshRequest): Promise<DolphinRefreshResponse>;
+  logoutSession?(request?: DolphinLogoutRequest): Promise<DolphinLogoutResponse>;
 }
 
 export interface DolphinAuthEndpoints {
   readonly nonceUrl: string;
   readonly verifyUrl: string;
+  readonly refreshUrl?: string;
+  readonly logoutUrl?: string;
   readonly fetch?: FetchLike;
   readonly headers?: Readonly<Record<string, string>>;
   readonly credentials?: RequestCredentials;
@@ -121,6 +150,7 @@ export interface DolphinReactState {
   readonly activeWallet?: Wallet;
   readonly activeAccount?: Account;
   readonly session?: SessionSnapshot;
+  readonly refreshToken?: DolphinRefreshTokenSnapshot;
   readonly events: readonly DolphinEvent[];
 }
 
@@ -135,7 +165,16 @@ export type DolphinReactAction =
       readonly accounts: readonly Account[];
       readonly account: Account;
       readonly session: SessionSnapshot;
+      readonly refreshToken?: DolphinRefreshTokenSnapshot;
     }
+  | { readonly type: "sessionRefreshable"; readonly session: SessionSnapshot }
+  | {
+      readonly type: "sessionRefreshed";
+      readonly session: SessionSnapshot;
+      readonly refreshToken?: DolphinRefreshTokenSnapshot;
+    }
+  | { readonly type: "sessionExpired" }
+  | { readonly type: "loggedOut"; readonly reason?: DolphinError }
   | { readonly type: "failed"; readonly error: DolphinError }
   | { readonly type: "disconnected" }
   | { readonly type: "event"; readonly event: DolphinEvent };
@@ -146,6 +185,8 @@ export interface DolphinContextValue extends DolphinReactState {
   readonly connectWallet: (options: ConnectWalletOptions) => Promise<readonly Account[]>;
   readonly disconnectWallet: (options?: DisconnectWalletOptions) => Promise<void>;
   readonly signIn: (options?: SignInOptions) => Promise<DolphinSignInResult>;
+  readonly refreshSession: (request?: DolphinRefreshRequest) => Promise<DolphinRefreshResponse>;
+  readonly logoutSession: (request?: DolphinLogoutRequest) => Promise<DolphinLogoutResponse>;
 }
 
 type FetchLike = (
@@ -205,6 +246,29 @@ export function DolphinProvider({ config, children }: DolphinProviderProps) {
   useEffect(() => {
     void refreshWallets();
   }, [refreshWallets]);
+
+  useEffect(() => {
+    if (!state.session) {
+      return undefined;
+    }
+
+    const expiresAt = Date.parse(state.session.expiresAt);
+
+    if (!Number.isFinite(expiresAt)) {
+      return undefined;
+    }
+
+    const delay = Math.max(expiresAt - Date.now(), 0);
+    const timer = window.setTimeout(() => {
+      if (state.refreshToken) {
+        dispatch({ type: "sessionRefreshable", session: state.session as SessionSnapshot });
+      } else {
+        dispatch({ type: "sessionExpired" });
+      }
+    }, delay);
+
+    return () => window.clearTimeout(timer);
+  }, [state.refreshToken, state.session]);
 
   const connectWallet = useCallback(
     async (options: ConnectWalletOptions) => {
@@ -294,7 +358,8 @@ export function DolphinProvider({ config, children }: DolphinProviderProps) {
           wallet,
           accounts: state.accounts.length > 0 ? state.accounts : [account],
           account,
-          session: result.session
+          session: result.session,
+          ...(result.response.refreshToken ? { refreshToken: result.response.refreshToken } : {})
         });
         return result;
       } catch (error) {
@@ -313,6 +378,67 @@ export function DolphinProvider({ config, children }: DolphinProviderProps) {
     [adapters, auth, state.accounts, state.activeAccount, state.activeWallet]
   );
 
+  const refreshSession = useCallback(
+    async (request: DolphinRefreshRequest = {}) => {
+      if (!auth?.refreshSession) {
+        const error = createDolphinError({
+          code: "NETWORK_ERROR",
+          stage: "session",
+          message: "Dolphin refresh endpoint is not configured.",
+          recoverable: true
+        });
+        dispatch({ type: "failed", error });
+        throw error;
+      }
+
+      const refreshToken = request.refreshToken ?? state.refreshToken?.token;
+
+      if (!refreshToken) {
+        dispatch({ type: "sessionExpired" });
+        throw createDolphinError({
+          code: "SESSION_EXPIRED",
+          stage: "session",
+          message: "No refresh token is available.",
+          recoverable: false
+        });
+      }
+
+      try {
+        const result = await auth.refreshSession({ refreshToken });
+        dispatch({
+          type: "sessionRefreshed",
+          session: result.session,
+          ...(result.refreshToken ? { refreshToken: result.refreshToken } : {})
+        });
+        return result;
+      } catch (error) {
+        const dolphinError = toDolphinError(error, {
+          message: "Session refresh failed.",
+          stage: "session",
+          code: "SESSION_EXPIRED",
+          recoverable: false
+        });
+        dispatch({ type: "failed", error: dolphinError });
+        throw dolphinError;
+      }
+    },
+    [auth, state.refreshToken]
+  );
+
+  const logoutSession = useCallback(
+    async (request: DolphinLogoutRequest = {}) => {
+      const refreshToken = request.refreshToken ?? state.refreshToken?.token;
+
+      if (auth?.logoutSession) {
+        await auth.logoutSession({ ...(refreshToken ? { refreshToken } : {}) });
+      }
+
+      dispatch({ type: "loggedOut" });
+      return { ok: true };
+    },
+    [auth, state.refreshToken]
+  );
+
   const value = useMemo<DolphinContextValue>(
     () => ({
       ...state,
@@ -320,9 +446,20 @@ export function DolphinProvider({ config, children }: DolphinProviderProps) {
       refreshWallets,
       connectWallet,
       disconnectWallet,
-      signIn
+      signIn,
+      refreshSession,
+      logoutSession
     }),
-    [adapters, connectWallet, disconnectWallet, refreshWallets, signIn, state]
+    [
+      adapters,
+      connectWallet,
+      disconnectWallet,
+      logoutSession,
+      refreshSession,
+      refreshWallets,
+      signIn,
+      state
+    ]
   );
 
   return <DolphinContext.Provider value={value}>{children}</DolphinContext.Provider>;
@@ -376,11 +513,17 @@ export function useSignIn() {
 }
 
 export function useSession() {
-  const { state, session } = useDolphin();
+  const { state, session, refreshToken, refreshSession, logoutSession } = useDolphin();
   return {
     session,
+    refreshToken,
     status: state.status,
-    isSignedIn: state.status === "signed-in"
+    isSignedIn: state.status === "signed-in",
+    isExpired: state.status === "expired",
+    isRefreshable: state.status === "refreshable",
+    isLoggedOut: state.status === "logged-out",
+    refreshSession,
+    logoutSession
   };
 }
 
@@ -460,7 +603,78 @@ export function dolphinReactReducer(
         accounts: action.accounts,
         activeWallet: action.wallet,
         activeAccount: action.account,
+        session: action.session,
+        ...(action.refreshToken ? { refreshToken: action.refreshToken } : {})
+      };
+    case "sessionRefreshable": {
+      const error = createDolphinError({
+        code: "SESSION_EXPIRED",
+        stage: "session",
+        message: "Dolphin session expired and can be refreshed.",
+        recoverable: true
+      });
+      return {
+        ...current,
+        state: {
+          status: "refreshable",
+          session: action.session,
+          reason: error
+        },
         session: action.session
+      };
+    }
+    case "sessionRefreshed": {
+      const wallet =
+        current.activeWallet ??
+        (current.state.status === "signed-in" ? current.state.wallet : undefined);
+      const account = current.activeAccount ?? current.accounts[0];
+
+      if (!wallet || !account) {
+        return {
+          ...current,
+          session: action.session,
+          ...(action.refreshToken ? { refreshToken: action.refreshToken } : {})
+        };
+      }
+
+      return {
+        ...current,
+        state: {
+          status: "signed-in",
+          wallet,
+          accounts: current.accounts,
+          activeAccount: account,
+          session: action.session
+        },
+        session: action.session,
+        ...(action.refreshToken ? { refreshToken: action.refreshToken } : {})
+      };
+    }
+    case "sessionExpired": {
+      const error = createDolphinError({
+        code: "SESSION_EXPIRED",
+        stage: "session",
+        message: "Dolphin session expired.",
+        recoverable: false
+      });
+      return {
+        ...current,
+        state: {
+          status: "expired",
+          ...(current.session ? { session: current.session } : {}),
+          reason: error
+        }
+      };
+    }
+    case "loggedOut":
+      return {
+        wallets: current.wallets,
+        events: current.events,
+        state: {
+          status: "logged-out",
+          ...(action.reason ? { reason: action.reason } : {})
+        },
+        accounts: []
       };
     case "failed":
       return failedState(current, action.error);
@@ -473,6 +687,8 @@ export function dolphinReactReducer(
 
 export function createEndpointAuthClient(config: DolphinAuthEndpoints): DolphinAuthClient {
   const fetcher = config.fetch ?? globalThis.fetch;
+  const refreshUrl = config.refreshUrl;
+  const logoutUrl = config.logoutUrl;
 
   if (!fetcher) {
     throw new Error("No fetch implementation is available for Dolphin auth endpoints.");
@@ -484,7 +700,21 @@ export function createEndpointAuthClient(config: DolphinAuthEndpoints): DolphinA
     },
     async verifySignIn(request) {
       return readSignInResponse(await postJson(fetcher, config.verifyUrl, request, config));
-    }
+    },
+    ...(refreshUrl
+      ? {
+          async refreshSession(request = {}) {
+            return readRefreshResponse(await postJson(fetcher, refreshUrl, request, config));
+          }
+        }
+      : {}),
+    ...(logoutUrl
+      ? {
+          async logoutSession(request = {}) {
+            return readLogoutResponse(await postJson(fetcher, logoutUrl, request, config));
+          }
+        }
+      : {})
   };
 }
 
@@ -582,12 +812,32 @@ function readSignInResponse(value: unknown): DolphinSignInResponse {
   if (isRecord(value) && isSessionSnapshot(value.session)) {
     return {
       session: value.session,
+      ...(isRefreshTokenSnapshot(value.refreshToken) ? { refreshToken: value.refreshToken } : {}),
       ...("user" in value ? { user: value.user } : {}),
       ...("verification" in value ? { verification: value.verification } : {})
     };
   }
 
   throw new Error("Dolphin verify endpoint returned an invalid response.");
+}
+
+function readRefreshResponse(value: unknown): DolphinRefreshResponse {
+  if (isRecord(value) && isSessionSnapshot(value.session)) {
+    return {
+      session: value.session,
+      ...(isRefreshTokenSnapshot(value.refreshToken) ? { refreshToken: value.refreshToken } : {})
+    };
+  }
+
+  throw new Error("Dolphin refresh endpoint returned an invalid response.");
+}
+
+function readLogoutResponse(value: unknown): DolphinLogoutResponse {
+  if (isRecord(value) && value.ok === true) {
+    return { ok: true };
+  }
+
+  throw new Error("Dolphin logout endpoint returned an invalid response.");
 }
 
 function isSessionSnapshot(value: unknown): value is SessionSnapshot {
@@ -597,6 +847,16 @@ function isSessionSnapshot(value: unknown): value is SessionSnapshot {
     typeof value.issuedAt === "string" &&
     typeof value.expiresAt === "string" &&
     (value.token === undefined || typeof value.token === "string")
+  );
+}
+
+function isRefreshTokenSnapshot(value: unknown): value is DolphinRefreshTokenSnapshot {
+  return (
+    isRecord(value) &&
+    typeof value.token === "string" &&
+    typeof value.subject === "string" &&
+    typeof value.issuedAt === "string" &&
+    typeof value.expiresAt === "string"
   );
 }
 

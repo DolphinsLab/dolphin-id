@@ -163,6 +163,7 @@ describe("auth route helpers", () => {
 
     expect(verified.status).toBe(200);
     expect(verified.cookies?.[0]?.name).toBe("dolphin_session");
+    expect(verified.cookies?.[1]?.name).toBe("dolphin_refresh");
 
     const me = await routes.me({
       cookies: {
@@ -172,8 +173,19 @@ describe("auth route helpers", () => {
 
     expect(me.status).toBe(200);
     expect(me.body.session).toMatchObject({ subject: "evm:1:0xabc" });
+    await expect(
+      routes.refresh({
+        body: {
+          refreshToken: verified.cookies?.[1]?.value
+        }
+      })
+    ).resolves.toMatchObject({
+      status: 200
+    });
     await expect(routes.me({ cookies: {} })).rejects.toThrow("Unauthorized");
-    await expect(routes.logout()).resolves.toMatchObject({
+    await expect(
+      routes.logout({ cookies: { dolphin_refresh: verified.cookies?.[1]?.value } })
+    ).resolves.toMatchObject({
       status: 200,
       body: { ok: true }
     });
@@ -209,6 +221,7 @@ describe("auth route helpers", () => {
     expect(paths).toEqual([
       "POST /dolphin/nonce",
       "POST /dolphin/verify",
+      "POST /dolphin/refresh",
       "GET /dolphin/me",
       "POST /dolphin/logout"
     ]);
@@ -216,6 +229,95 @@ describe("auth route helpers", () => {
 });
 
 describe("createServerAuth", () => {
+  it("rotates refresh tokens and rejects reuse", async () => {
+    const auth = createServerAuth({
+      jwtSecret: "secret",
+      userRepository: new InMemoryUserRepository(),
+      sessionTtlSeconds: 60,
+      refreshTokenTtlSeconds: 300,
+      verifySiwx: async ({ message }) => ({ ok: true, subject: message.address })
+    });
+    const issuedAt = new Date("2026-01-01T00:00:00.000Z");
+    const nonce = await auth.issueNonce({
+      now: issuedAt,
+      domain: "example.com",
+      chainType: "evm",
+      address: "0xABC"
+    });
+    const signedIn = await auth.verifySignIn({
+      now: issuedAt,
+      nonce: nonce.nonce,
+      signature: "0xsignature",
+      message: {
+        format: "eip4361",
+        chainType: "evm",
+        domain: "example.com",
+        address: "0xABC",
+        uri: "https://example.com/login",
+        version: "1",
+        chainId: "1",
+        nonce: nonce.nonce,
+        issuedAt: issuedAt.toISOString()
+      }
+    });
+    const refreshed = await auth.refreshSession({
+      refreshToken: signedIn.refreshToken.token,
+      now: new Date("2026-01-01T00:01:00.000Z")
+    });
+
+    expect(refreshed.session.expiresAt).toEqual(new Date("2026-01-01T00:02:00.000Z"));
+    expect(refreshed.refreshToken.token).not.toBe(signedIn.refreshToken.token);
+    await expect(
+      auth.refreshSession({
+        refreshToken: signedIn.refreshToken.token,
+        now: new Date("2026-01-01T00:01:01.000Z")
+      })
+    ).rejects.toThrow("Refresh token rotated");
+  });
+
+  it("invalidates active sessions and refresh tokens for a subject", async () => {
+    const auth = createServerAuth({
+      jwtSecret: "secret",
+      verifySiwx: async ({ message }) => ({ ok: true, subject: message.address })
+    });
+    const issuedAt = new Date("2026-01-01T00:00:00.000Z");
+    const nonce = await auth.issueNonce({
+      now: issuedAt,
+      domain: "example.com",
+      chainType: "evm",
+      address: "0xABC"
+    });
+    const signedIn = await auth.verifySignIn({
+      now: issuedAt,
+      nonce: nonce.nonce,
+      signature: "0xsignature",
+      message: {
+        format: "eip4361",
+        chainType: "evm",
+        domain: "example.com",
+        address: "0xABC",
+        uri: "https://example.com/login",
+        version: "1",
+        chainId: "1",
+        nonce: nonce.nonce,
+        issuedAt: issuedAt.toISOString()
+      }
+    });
+
+    await expect(
+      auth.verifySession(signedIn.session.token, { now: issuedAt })
+    ).resolves.toMatchObject({
+      subject: signedIn.user.id
+    });
+    await expect(auth.invalidateSessions(signedIn.user.id)).resolves.toBe(1);
+    await expect(auth.verifySession(signedIn.session.token, { now: issuedAt })).rejects.toThrow(
+      "Session invalidated"
+    );
+    await expect(
+      auth.refreshSession({ refreshToken: signedIn.refreshToken.token, now: issuedAt })
+    ).rejects.toThrow("Refresh token revoked");
+  });
+
   it("verifies sign-in, creates address-as-user, and issues a session", async () => {
     const auth = createServerAuth({
       jwtSecret: "secret",

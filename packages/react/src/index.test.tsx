@@ -45,6 +45,79 @@ describe("dolphinReactReducer", () => {
     expect(signedIn.activeAccount).toEqual(account);
   });
 
+  it("surfaces refreshable and logged-out session states", () => {
+    const wallet = createWallet("evm:1", "injected");
+    const account = createAccount("evm:1", wallet, { type: "evm", id: "1", name: "Ethereum" });
+    const session: SessionSnapshot = {
+      subject: "evm:1:0x1234",
+      issuedAt: "2026-01-01T00:00:00.000Z",
+      expiresAt: "2026-01-01T00:01:00.000Z",
+      token: "jwt"
+    };
+    const connected = dolphinReactReducer(createInitialDolphinState(), {
+      type: "connected",
+      wallet,
+      accounts: [account]
+    });
+    const signedIn = dolphinReactReducer(connected, {
+      type: "signedIn",
+      wallet,
+      accounts: [account],
+      account,
+      session,
+      refreshToken: {
+        token: "refresh",
+        subject: session.subject,
+        issuedAt: session.issuedAt,
+        expiresAt: "2026-01-31T00:00:00.000Z"
+      }
+    });
+    const refreshable = dolphinReactReducer(signedIn, {
+      type: "sessionRefreshable",
+      session
+    });
+    const loggedOut = dolphinReactReducer(refreshable, { type: "loggedOut" });
+
+    expect(refreshable.state.status).toBe("refreshable");
+    expect(loggedOut.state.status).toBe("logged-out");
+    expect(loggedOut.session).toBeUndefined();
+  });
+
+  it("returns to signed-in after session refresh", () => {
+    const wallet = createWallet("evm:1", "injected");
+    const account = createAccount("evm:1", wallet, { type: "evm", id: "1", name: "Ethereum" });
+    const session: SessionSnapshot = {
+      subject: "evm:1:0x1234",
+      issuedAt: "2026-01-01T00:00:00.000Z",
+      expiresAt: "2026-01-01T00:01:00.000Z",
+      token: "jwt"
+    };
+    const nextSession: SessionSnapshot = {
+      ...session,
+      token: "next-jwt",
+      expiresAt: "2026-01-01T00:02:00.000Z"
+    };
+    const connected = dolphinReactReducer(createInitialDolphinState(), {
+      type: "connected",
+      wallet,
+      accounts: [account]
+    });
+    const signedIn = dolphinReactReducer(connected, {
+      type: "signedIn",
+      wallet,
+      accounts: [account],
+      account,
+      session
+    });
+    const refreshed = dolphinReactReducer(signedIn, {
+      type: "sessionRefreshed",
+      session: nextSession
+    });
+
+    expect(refreshed.state.status).toBe("signed-in");
+    expect(refreshed.session).toEqual(nextSession);
+  });
+
   it("records auth failures as recoverable failed state", () => {
     const failed = dolphinReactReducer(createInitialDolphinState(), {
       type: "failed",
@@ -123,6 +196,47 @@ describe("createEndpointAuthClient", () => {
       })
     ).rejects.toThrow("invalid signature");
   });
+
+  it("refreshes and logs out through configured endpoints", async () => {
+    const calls: string[] = [];
+    const auth = createEndpointAuthClient({
+      nonceUrl: "/auth/nonce",
+      verifyUrl: "/auth/verify",
+      refreshUrl: "/auth/refresh",
+      logoutUrl: "/auth/logout",
+      fetch: async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () =>
+            url === "/auth/logout"
+              ? { ok: true }
+              : {
+                  session: {
+                    subject: "evm:1:0x1234",
+                    issuedAt: "2026-01-01T00:00:00.000Z",
+                    expiresAt: "2026-01-01T00:01:00.000Z",
+                    token: "jwt"
+                  },
+                  refreshToken: {
+                    token: "refresh",
+                    subject: "evm:1:0x1234",
+                    issuedAt: "2026-01-01T00:00:00.000Z",
+                    expiresAt: "2026-01-31T00:00:00.000Z"
+                  }
+                }
+        };
+      }
+    });
+
+    await expect(auth.refreshSession?.({ refreshToken: "refresh" })).resolves.toMatchObject({
+      session: { token: "jwt" },
+      refreshToken: { token: "refresh" }
+    });
+    await expect(auth.logoutSession?.({ refreshToken: "refresh" })).resolves.toEqual({ ok: true });
+    expect(calls).toEqual(["/auth/refresh", "/auth/logout"]);
+  });
 });
 
 function createAuthClient(): DolphinAuthClient {
@@ -137,6 +251,12 @@ function createAuthClient(): DolphinAuthClient {
           issuedAt: "2026-01-01T00:00:00.000Z",
           expiresAt: "2026-01-08T00:00:00.000Z",
           token: "jwt"
+        },
+        refreshToken: {
+          token: "refresh",
+          subject: `${message.chainType}:${message.chainId}:${message.address.toLowerCase()}`,
+          issuedAt: "2026-01-01T00:00:00.000Z",
+          expiresAt: "2026-01-31T00:00:00.000Z"
         },
         verification: { ok: true }
       };

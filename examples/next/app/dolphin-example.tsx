@@ -19,6 +19,8 @@ export function DolphinExample() {
           auth: {
             nonceUrl: "/auth/nonce",
             verifyUrl: "/auth/verify",
+            refreshUrl: "/auth/refresh",
+            logoutUrl: "/auth/logout",
             credentials: "same-origin"
           }
         }}

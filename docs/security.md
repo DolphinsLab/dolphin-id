@@ -46,7 +46,8 @@ createServerAuth({
 
 ## Cookie Mode
 
-Use `createSessionCookieOptions` for cookie-backed sessions.
+Use `createSessionCookieOptions` for cookie-backed sessions and rotating refresh
+tokens.
 
 ```ts
 const cookie = createSessionCookieOptions({
@@ -65,6 +66,24 @@ Defaults:
 If you set `SameSite=None`, the cookie must also be `Secure`. Cookie-backed apps
 should still protect unsafe methods with CSRF tokens, same-site request checks,
 or framework-native CSRF middleware.
+
+## Refresh Tokens And Forced Logout
+
+`createServerAuth` issues a refresh token alongside each successful sign-in.
+Refresh tokens have a configurable `refreshTokenTtlSeconds` window and rotate on
+each successful `refreshSession` call.
+
+```ts
+const refreshed = await auth.refreshSession({ refreshToken });
+```
+
+The previous refresh token is marked rotated and cannot be reused. Reuse,
+revocation, expiration, and unknown-token cases are rejected.
+
+Use `invalidateSessions(subject)` for server-side forced logout. It increments a
+per-subject session version and revokes outstanding refresh tokens, so existing
+access tokens fail `verifySession` and existing refresh tokens fail
+`refreshSession`.
 
 ## Production HTTP
 

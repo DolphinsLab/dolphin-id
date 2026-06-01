@@ -1,6 +1,7 @@
 import { createServerAuth, decodeJwtPayload, type VerificationRequest } from "@dolphin-id/server";
 
 export const SESSION_COOKIE = "dolphin_session";
+export const REFRESH_COOKIE = "dolphin_refresh";
 
 export const auth = createServerAuth({
   jwtSecret: "local-development-secret-with-32-plus-characters",

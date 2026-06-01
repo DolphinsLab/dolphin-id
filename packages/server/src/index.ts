@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 import { normalizeSuiAddress } from "@mysten/sui/utils";
 import { verifyPersonalMessageSignature } from "@mysten/sui/verify";
@@ -8,6 +8,7 @@ import { createSiweMessage } from "viem/siwe";
 
 const DEFAULT_NONCE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
+const DEFAULT_REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 const MIN_PRODUCTION_JWT_SECRET_LENGTH = 32;
 const WEAK_JWT_SECRETS = new Set([
   "secret",
@@ -261,6 +262,111 @@ export interface VerifiedJwtSession extends JwtSession {
   readonly claims: Readonly<Record<string, unknown>>;
 }
 
+export interface RefreshToken {
+  readonly token: string;
+  readonly subject: string;
+  readonly issuedAt: Date;
+  readonly expiresAt: Date;
+  readonly expiresInSeconds: number;
+}
+
+export interface RefreshTokenRecord {
+  readonly tokenHash: string;
+  readonly subject: string;
+  readonly issuedAt: Date;
+  readonly expiresAt: Date;
+  readonly sessionVersion: number;
+  readonly metadata?: Readonly<Record<string, unknown>>;
+  readonly rotatedAt?: Date;
+  readonly revokedAt?: Date;
+}
+
+export type RefreshTokenConsumeFailureReason = "not_found" | "expired" | "rotated" | "revoked";
+
+export type RefreshTokenConsumeResult =
+  | { readonly ok: true; readonly record: RefreshTokenRecord & { readonly consumedAt: Date } }
+  | { readonly ok: false; readonly reason: RefreshTokenConsumeFailureReason };
+
+export interface RefreshTokenStore {
+  issue(record: RefreshTokenRecord): Promise<void>;
+  consume(tokenHash: string, options?: { readonly now?: Date }): Promise<RefreshTokenConsumeResult>;
+  revoke(tokenHash: string, options?: { readonly now?: Date }): Promise<void>;
+  revokeSubject(subject: string, options?: { readonly now?: Date }): Promise<void>;
+}
+
+export class InMemoryRefreshTokenStore implements RefreshTokenStore {
+  readonly #records = new Map<string, RefreshTokenRecord>();
+
+  async issue(record: RefreshTokenRecord): Promise<void> {
+    this.#records.set(record.tokenHash, record);
+  }
+
+  async consume(
+    tokenHash: string,
+    options: { readonly now?: Date } = {}
+  ): Promise<RefreshTokenConsumeResult> {
+    const record = this.#records.get(tokenHash);
+    const now = options.now ?? new Date();
+
+    if (!record) {
+      return { ok: false, reason: "not_found" };
+    }
+
+    if (record.revokedAt) {
+      return { ok: false, reason: "revoked" };
+    }
+
+    if (record.rotatedAt) {
+      return { ok: false, reason: "rotated" };
+    }
+
+    if (record.expiresAt.getTime() <= now.getTime()) {
+      return { ok: false, reason: "expired" };
+    }
+
+    const rotated = { ...record, rotatedAt: now };
+    this.#records.set(tokenHash, rotated);
+    return { ok: true, record: { ...rotated, consumedAt: now } };
+  }
+
+  async revoke(tokenHash: string, options: { readonly now?: Date } = {}): Promise<void> {
+    const record = this.#records.get(tokenHash);
+
+    if (record) {
+      this.#records.set(tokenHash, { ...record, revokedAt: options.now ?? new Date() });
+    }
+  }
+
+  async revokeSubject(subject: string, options: { readonly now?: Date } = {}): Promise<void> {
+    const now = options.now ?? new Date();
+
+    this.#records.forEach((record, tokenHash) => {
+      if (record.subject === subject && !record.revokedAt) {
+        this.#records.set(tokenHash, { ...record, revokedAt: now });
+      }
+    });
+  }
+}
+
+export interface SessionInvalidationStore {
+  getVersion(subject: string): Promise<number>;
+  incrementVersion(subject: string): Promise<number>;
+}
+
+export class InMemorySessionInvalidationStore implements SessionInvalidationStore {
+  readonly #versions = new Map<string, number>();
+
+  async getVersion(subject: string): Promise<number> {
+    return this.#versions.get(subject) ?? 0;
+  }
+
+  async incrementVersion(subject: string): Promise<number> {
+    const next = (this.#versions.get(subject) ?? 0) + 1;
+    this.#versions.set(subject, next);
+    return next;
+  }
+}
+
 export interface VerifyJwtSessionOptions {
   readonly token: string;
   readonly secret: string;
@@ -400,16 +506,30 @@ export interface VerifySignInRequest {
 export interface VerifySignInResult {
   readonly user: User;
   readonly session: JwtSession;
+  readonly refreshToken: RefreshToken;
   readonly verification: VerificationResult;
+}
+
+export interface RefreshSessionRequest {
+  readonly refreshToken: string;
+  readonly now?: Date;
+}
+
+export interface RefreshSessionResult {
+  readonly session: JwtSession;
+  readonly refreshToken: RefreshToken;
 }
 
 export interface ServerAuthOptions {
   readonly nonceStore?: NonceStore;
+  readonly refreshTokenStore?: RefreshTokenStore;
+  readonly sessionInvalidationStore?: SessionInvalidationStore;
   readonly userRepository?: UserRepository;
   readonly verifySiwx?: SiwxVerifier;
   readonly jwtSecret: string;
   readonly nonceTtlMs?: number;
   readonly sessionTtlSeconds?: number;
+  readonly refreshTokenTtlSeconds?: number;
   readonly issuer?: string;
   readonly audience?: string;
   readonly runtimeEnvironment?: RuntimeEnvironment;
@@ -427,6 +547,10 @@ export interface ServerAuth {
   ): Promise<NonceConsumeResult>;
   verifySignIn(request: VerifySignInRequest): Promise<VerifySignInResult>;
   issueSession(user: User, options?: { readonly now?: Date }): JwtSession;
+  refreshSession(request: RefreshSessionRequest): Promise<RefreshSessionResult>;
+  verifySession(token: string, options?: { readonly now?: Date }): Promise<VerifiedJwtSession>;
+  revokeRefreshToken(refreshToken: string, options?: { readonly now?: Date }): Promise<void>;
+  invalidateSessions(subject: string): Promise<number>;
 }
 
 export interface AuthRouteRequest {
@@ -450,16 +574,19 @@ export interface AuthRouteCookie {
 
 export interface AuthRouteHandlersOptions {
   readonly auth: ServerAuth;
-  readonly jwtSecret: string;
+  readonly jwtSecret?: string;
   readonly cookieName?: string;
+  readonly refreshCookieName?: string;
   readonly cookie?: Omit<SessionCookieOptionsInput, "name" | "expires">;
+  readonly refreshCookie?: Omit<SessionCookieOptionsInput, "name" | "expires">;
 }
 
 export interface AuthRouteHandlers {
   nonce(request: AuthRouteRequest): Promise<AuthRouteResponse>;
   verify(request: AuthRouteRequest): Promise<AuthRouteResponse>;
+  refresh(request: AuthRouteRequest): Promise<AuthRouteResponse>;
   me(request: AuthRouteRequest): Promise<AuthRouteResponse>;
-  logout(): Promise<AuthRouteResponse>;
+  logout(request?: AuthRouteRequest): Promise<AuthRouteResponse>;
   requireSession(request: AuthRouteRequest): Promise<VerifiedJwtSession>;
 }
 
@@ -479,6 +606,7 @@ export type ExpressLikeNext = (error?: unknown) => void;
 export interface ExpressAuthRoutes {
   nonce(request: ExpressLikeRequest, response: ExpressLikeResponse): Promise<void>;
   verify(request: ExpressLikeRequest, response: ExpressLikeResponse): Promise<void>;
+  refresh(request: ExpressLikeRequest, response: ExpressLikeResponse): Promise<void>;
   me(request: ExpressLikeRequest, response: ExpressLikeResponse): Promise<void>;
   logout(request: ExpressLikeRequest, response: ExpressLikeResponse): Promise<void>;
   requireSession(
@@ -518,11 +646,61 @@ export function createServerAuth(options: ServerAuthOptions): ServerAuth {
   validateServerAuthSecurity(options);
 
   const nonceStore = options.nonceStore ?? new InMemoryNonceStore();
+  const refreshTokenStore = options.refreshTokenStore ?? new InMemoryRefreshTokenStore();
+  const sessionInvalidationStore =
+    options.sessionInvalidationStore ?? new InMemorySessionInvalidationStore();
   const userRepository = options.userRepository ?? new InMemoryUserRepository();
   const verifySiwx = options.verifySiwx ?? verifySiwxPlaceholder;
   const nonceTtlMs = options.nonceTtlMs ?? DEFAULT_NONCE_TTL_MS;
   const sessionTtlSeconds = options.sessionTtlSeconds ?? DEFAULT_SESSION_TTL_SECONDS;
+  const refreshTokenTtlSeconds =
+    options.refreshTokenTtlSeconds ?? DEFAULT_REFRESH_TOKEN_TTL_SECONDS;
   const requireNonceDomain = options.requireNonceDomain ?? true;
+
+  const issueSessionForSubject = async (
+    subject: string,
+    sessionOptions: { readonly now?: Date } = {}
+  ) => {
+    const sessionVersion = await sessionInvalidationStore.getVersion(subject);
+    return issueJwtSession({
+      subject,
+      secret: options.jwtSecret,
+      expiresInSeconds: sessionTtlSeconds,
+      claims: { did_session_version: sessionVersion },
+      ...(sessionOptions.now ? { now: sessionOptions.now } : {}),
+      ...(options.issuer ? { issuer: options.issuer } : {}),
+      ...(options.audience ? { audience: options.audience } : {})
+    });
+  };
+
+  const issueRefreshTokenForSubject = async (
+    subject: string,
+    refreshOptions: {
+      readonly now?: Date;
+      readonly metadata?: Readonly<Record<string, unknown>>;
+    } = {}
+  ): Promise<RefreshToken> => {
+    const now = refreshOptions.now ?? new Date();
+    const token = createRefreshToken();
+    const expiresAt = new Date(now.getTime() + refreshTokenTtlSeconds * 1000);
+    const sessionVersion = await sessionInvalidationStore.getVersion(subject);
+    await refreshTokenStore.issue({
+      tokenHash: hashRefreshToken(token),
+      subject,
+      issuedAt: now,
+      expiresAt,
+      sessionVersion,
+      ...(refreshOptions.metadata ? { metadata: refreshOptions.metadata } : {})
+    });
+
+    return {
+      token,
+      subject,
+      issuedAt: now,
+      expiresAt,
+      expiresInSeconds: refreshTokenTtlSeconds
+    };
+  };
 
   return {
     async issueNonce(issueOptions = {}) {
@@ -571,33 +749,86 @@ export function createServerAuth(options: ServerAuthOptions): ServerAuth {
       const user = await userRepository.findOrCreateByAccount(account, {
         ...(request.now ? { now: request.now } : {})
       });
+      const sessionVersion = await sessionInvalidationStore.getVersion(user.id);
       const session = issueJwtSession({
         subject: user.id,
         secret: options.jwtSecret,
         expiresInSeconds: sessionTtlSeconds,
-        claims: { did_account: account },
+        claims: { did_account: account, did_session_version: sessionVersion },
         ...(request.now ? { now: request.now } : {}),
         ...(options.issuer ? { issuer: options.issuer } : {}),
         ...(options.audience ? { audience: options.audience } : {})
       });
+      const refreshToken = await issueRefreshTokenForSubject(user.id, {
+        ...(request.now ? { now: request.now } : {})
+      });
 
-      return { user, session, verification };
+      return { user, session, refreshToken, verification };
     },
     issueSession(user, sessionOptions = {}) {
       return issueJwtSession({
         subject: user.id,
         secret: options.jwtSecret,
         expiresInSeconds: sessionTtlSeconds,
+        claims: { did_session_version: 0 },
         ...(sessionOptions.now ? { now: sessionOptions.now } : {}),
         ...(options.issuer ? { issuer: options.issuer } : {}),
         ...(options.audience ? { audience: options.audience } : {})
       });
+    },
+    async refreshSession(request) {
+      const consumed = await refreshTokenStore.consume(hashRefreshToken(request.refreshToken), {
+        ...(request.now ? { now: request.now } : {})
+      });
+
+      if (!consumed.ok) {
+        throw new Error(`Refresh token ${consumed.reason}.`);
+      }
+
+      const currentVersion = await sessionInvalidationStore.getVersion(consumed.record.subject);
+
+      if (consumed.record.sessionVersion !== currentVersion) {
+        throw new Error("Refresh token subject invalidated.");
+      }
+
+      const session = await issueSessionForSubject(consumed.record.subject, {
+        ...(request.now ? { now: request.now } : {})
+      });
+      const refreshToken = await issueRefreshTokenForSubject(consumed.record.subject, {
+        ...(request.now ? { now: request.now } : {})
+      });
+
+      return { session, refreshToken };
+    },
+    async verifySession(token, verifyOptions = {}) {
+      const session = verifyJwtSession({
+        token,
+        secret: options.jwtSecret,
+        ...(verifyOptions.now ? { now: verifyOptions.now } : {})
+      });
+      const tokenVersion = readSessionVersion(session.claims);
+      const currentVersion = await sessionInvalidationStore.getVersion(session.subject);
+
+      if (tokenVersion !== currentVersion) {
+        throw new Error("Session invalidated.");
+      }
+
+      return session;
+    },
+    revokeRefreshToken(refreshToken, revokeOptions = {}) {
+      return refreshTokenStore.revoke(hashRefreshToken(refreshToken), revokeOptions);
+    },
+    async invalidateSessions(subject) {
+      const version = await sessionInvalidationStore.incrementVersion(subject);
+      await refreshTokenStore.revokeSubject(subject);
+      return version;
     }
   };
 }
 
 export function createAuthRouteHandlers(options: AuthRouteHandlersOptions): AuthRouteHandlers {
   const cookieName = options.cookieName ?? "dolphin_session";
+  const refreshCookieName = options.refreshCookieName ?? "dolphin_refresh";
   const requireSession = async (request: AuthRouteRequest): Promise<VerifiedJwtSession> => {
     const token = readSessionToken(request, cookieName);
 
@@ -605,9 +836,7 @@ export function createAuthRouteHandlers(options: AuthRouteHandlersOptions): Auth
       throw new Error("Unauthorized.");
     }
 
-    return verifyJwtSession({
-      token,
-      secret: options.jwtSecret,
+    return options.auth.verifySession(token, {
       ...(request.now ? { now: request.now } : {})
     });
   };
@@ -646,11 +875,17 @@ export function createAuthRouteHandlers(options: AuthRouteHandlersOptions): Auth
         name: cookieName,
         expires: result.session.expiresAt
       });
+      const refreshCookieOptions = createSessionCookieOptions({
+        ...(options.refreshCookie ?? options.cookie ?? {}),
+        name: refreshCookieName,
+        expires: result.refreshToken.expiresAt
+      });
 
       return {
         status: 200,
         body: {
           session: result.session,
+          refreshToken: result.refreshToken,
           user: result.user,
           verification: result.verification
         },
@@ -659,6 +894,55 @@ export function createAuthRouteHandlers(options: AuthRouteHandlersOptions): Auth
             name: cookieOptions.name,
             value: result.session.token,
             options: cookieOptions
+          },
+          {
+            name: refreshCookieOptions.name,
+            value: result.refreshToken.token,
+            options: refreshCookieOptions
+          }
+        ]
+      };
+    },
+    async refresh(request) {
+      const body = readBodyRecord(request.body);
+      const refreshToken =
+        readString(body.refreshToken) ?? readSessionToken(request, refreshCookieName);
+
+      if (!refreshToken) {
+        throw new Error("Refresh token is required.");
+      }
+
+      const result = await options.auth.refreshSession({
+        refreshToken,
+        ...(request.now ? { now: request.now } : {})
+      });
+      const cookieOptions = createSessionCookieOptions({
+        ...(options.cookie ?? {}),
+        name: cookieName,
+        expires: result.session.expiresAt
+      });
+      const refreshCookieOptions = createSessionCookieOptions({
+        ...(options.refreshCookie ?? options.cookie ?? {}),
+        name: refreshCookieName,
+        expires: result.refreshToken.expiresAt
+      });
+
+      return {
+        status: 200,
+        body: {
+          session: result.session,
+          refreshToken: result.refreshToken
+        },
+        cookies: [
+          {
+            name: cookieOptions.name,
+            value: result.session.token,
+            options: cookieOptions
+          },
+          {
+            name: refreshCookieOptions.name,
+            value: result.refreshToken.token,
+            options: refreshCookieOptions
           }
         ]
       };
@@ -670,7 +954,17 @@ export function createAuthRouteHandlers(options: AuthRouteHandlersOptions): Auth
         body: { session }
       };
     },
-    async logout() {
+    async logout(request = {}) {
+      const body = request.body === undefined ? {} : readBodyRecord(request.body);
+      const refreshToken =
+        readString(body.refreshToken) ?? readSessionToken(request, refreshCookieName);
+
+      if (refreshToken) {
+        await options.auth.revokeRefreshToken(refreshToken, {
+          ...(request.now ? { now: request.now } : {})
+        });
+      }
+
       return {
         status: 200,
         body: { ok: true },
@@ -681,6 +975,15 @@ export function createAuthRouteHandlers(options: AuthRouteHandlersOptions): Auth
             options: createSessionCookieOptions({
               ...(options.cookie ?? {}),
               name: cookieName,
+              maxAgeSeconds: 0
+            })
+          },
+          {
+            name: refreshCookieName,
+            value: "",
+            options: createSessionCookieOptions({
+              ...(options.refreshCookie ?? options.cookie ?? {}),
+              name: refreshCookieName,
               maxAgeSeconds: 0
             })
           }
@@ -699,8 +1002,11 @@ export function createExpressAuthRoutes(options: AuthRouteHandlersOptions): Expr
       sendExpressResponse(response, await handlers.nonce(request)),
     verify: async (request, response) =>
       sendExpressResponse(response, await handlers.verify(request)),
+    refresh: async (request, response) =>
+      sendExpressResponse(response, await handlers.refresh(request)),
     me: async (request, response) => sendExpressResponse(response, await handlers.me(request)),
-    logout: async (_request, response) => sendExpressResponse(response, await handlers.logout()),
+    logout: async (request, response) =>
+      sendExpressResponse(response, await handlers.logout(request)),
     requireSession: async (request, response, next) => {
       try {
         request.dolphinSession = await handlers.requireSession(request);
@@ -728,11 +1034,14 @@ export function registerFastifyAuthRoutes(
   fastify.post(`${prefix}/verify`, async (request, reply) =>
     sendFastifyResponse(reply, await handlers.verify(request))
   );
+  fastify.post(`${prefix}/refresh`, async (request, reply) =>
+    sendFastifyResponse(reply, await handlers.refresh(request))
+  );
   fastify.get(`${prefix}/me`, async (request, reply) =>
     sendFastifyResponse(reply, await handlers.me(request))
   );
-  fastify.post(`${prefix}/logout`, async (_request, reply) =>
-    sendFastifyResponse(reply, await handlers.logout())
+  fastify.post(`${prefix}/logout`, async (request, reply) =>
+    sendFastifyResponse(reply, await handlers.logout(request))
   );
 }
 
@@ -922,6 +1231,18 @@ export function decodeJwtPayload(token: string): Readonly<Record<string, unknown
 
 function createNonce(): string {
   return randomBytes(16).toString("base64url");
+}
+
+function createRefreshToken(): string {
+  return `drt_${randomBytes(32).toString("base64url")}`;
+}
+
+function hashRefreshToken(token: string): string {
+  return createHash("sha256").update(token).digest("base64url");
+}
+
+function readSessionVersion(claims: Readonly<Record<string, unknown>>): number {
+  return typeof claims.did_session_version === "number" ? claims.did_session_version : 0;
 }
 
 function serializeNonceRecord(record: NonceRecord): string {

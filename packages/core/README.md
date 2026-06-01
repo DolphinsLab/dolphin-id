@@ -48,4 +48,5 @@ inventing package-local status strings.
   sign-in, session, and disconnect events. Use `normalizeDolphinEvent` to fill
   derived `chainType`, `walletName`, and timestamp fields.
 - `DolphinState` is the React-facing state union for `idle`, `loading`,
-  `connected`, `signed-in`, `failed`, and `expired`.
+  `connected`, `signed-in`, `failed`, `expired`, `refreshable`, and
+  `logged-out`.
