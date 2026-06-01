@@ -1,6 +1,6 @@
 {
   "name": "@dolphin-id/adapter-evm",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "EVM adapter package for Dolphin ID.",
   "type": "module",
   "sideEffects": false,

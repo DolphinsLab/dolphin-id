@@ -10,11 +10,18 @@ Prepare and publish the v0.1 MVP release after all required MVP slices pass CI, 
 
 ## Acceptance criteria
 
-- [ ] Release branch `release/v0.1.0` is created.
-- [ ] All v0.1 blocker issues are closed.
-- [ ] Changelog and migration notes are published.
-- [ ] Package versions are tagged consistently.
-- [ ] GitHub release notes summarize supported chains, known limits, and upgrade path.
+- [x] Release branch `release/v0.1.0` is created.
+- [x] All v0.1 blocker issues are closed.
+- [x] Changelog and migration notes are published.
+- [x] Package versions are tagged consistently.
+- [x] GitHub release notes summarize supported chains, known limits, and upgrade path.
+
+## Release notes
+
+- Branch: `release/v0.1.0`
+- Tag: `v0.1.0`
+- Notes: `docs/releases/v0.1.0.md`
+- Blockers closed: DID-009, DID-010
 
 ## Blocked by
 

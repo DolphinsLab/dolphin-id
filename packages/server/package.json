@@ -1,6 +1,6 @@
 {
   "name": "@dolphin-id/server",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Server auth primitives for Dolphin ID.",
   "type": "module",
   "sideEffects": false,

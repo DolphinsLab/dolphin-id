@@ -1,6 +1,6 @@
 {
   "name": "@dolphin-id/adapter-sui",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Sui adapter package for Dolphin ID.",
   "type": "module",
   "sideEffects": false,

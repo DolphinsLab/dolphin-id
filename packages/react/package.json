@@ -1,6 +1,6 @@
 {
   "name": "@dolphin-id/react",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "React provider and headless hooks for Dolphin ID.",
   "type": "module",
   "sideEffects": false,
