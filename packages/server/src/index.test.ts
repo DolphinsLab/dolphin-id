@@ -7,10 +7,14 @@ import {
   InMemoryUserRepository,
   RedisNonceStore,
   assertProductionSafeUrl,
+  createAuthRouteHandlers,
+  createExpressAuthRoutes,
   createServerAuth,
   createSessionCookieOptions,
   decodeJwtPayload,
   issueJwtSession,
+  registerFastifyAuthRoutes,
+  verifyJwtSession,
   verifyEvmSiweMessage,
   verifySuiPersonalMessage,
   type RedisNonceClient
@@ -90,6 +94,124 @@ describe("sessions", () => {
     expect(payload.sub).toBe("evm:1:0xabc");
     expect(payload.iat).toBe(1767225600);
     expect(payload.exp).toBe(1767830400);
+  });
+
+  it("verifies JWT sessions and rejects tampered tokens", () => {
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const session = issueJwtSession({
+      subject: "evm:1:0xabc",
+      secret: "secret",
+      now
+    });
+
+    expect(
+      verifyJwtSession({
+        token: session.token,
+        secret: "secret",
+        now
+      })
+    ).toMatchObject({
+      subject: "evm:1:0xabc",
+      expiresInSeconds: 7 * 24 * 60 * 60
+    });
+    expect(() =>
+      verifyJwtSession({
+        token: `${session.token}tampered`,
+        secret: "secret",
+        now
+      })
+    ).toThrow("JWT signature invalid");
+  });
+});
+
+describe("auth route helpers", () => {
+  it("exposes nonce, verify, me, and logout handlers", async () => {
+    const auth = createServerAuth({
+      jwtSecret: "route-secret",
+      verifySiwx: async ({ message }) => ({ ok: true, subject: message.address })
+    });
+    const routes = createAuthRouteHandlers({ auth, jwtSecret: "route-secret" });
+    const nonce = await routes.nonce({
+      body: {
+        domain: "example.com",
+        chainType: "evm",
+        address: "0xABC",
+        walletName: "Mock"
+      }
+    });
+
+    expect(nonce.status).toBe(200);
+
+    const nonceValue = String(nonce.body.nonce);
+    const verified = await routes.verify({
+      body: {
+        nonce: nonceValue,
+        signature: "0xsignature",
+        message: {
+          format: "eip4361",
+          chainType: "evm",
+          domain: "example.com",
+          address: "0xABC",
+          uri: "https://example.com/login",
+          version: "1",
+          chainId: "1",
+          nonce: nonceValue,
+          issuedAt: "2026-01-01T00:00:00.000Z"
+        }
+      }
+    });
+
+    expect(verified.status).toBe(200);
+    expect(verified.cookies?.[0]?.name).toBe("dolphin_session");
+
+    const me = await routes.me({
+      cookies: {
+        dolphin_session: verified.cookies?.[0]?.value
+      }
+    });
+
+    expect(me.status).toBe(200);
+    expect(me.body.session).toMatchObject({ subject: "evm:1:0xabc" });
+    await expect(routes.me({ cookies: {} })).rejects.toThrow("Unauthorized");
+    await expect(routes.logout()).resolves.toMatchObject({
+      status: 200,
+      body: { ok: true }
+    });
+  });
+
+  it("provides Express route helpers including requireSession", async () => {
+    const auth = createServerAuth({ jwtSecret: "route-secret" });
+    const routes = createExpressAuthRoutes({ auth, jwtSecret: "route-secret" });
+    const response = createExpressResponse();
+
+    await routes.requireSession({ cookies: {} }, response, () => undefined);
+
+    expect(response.statusCode).toBe(401);
+    expect(response.body).toEqual({ error: "Unauthorized." });
+  });
+
+  it("registers Fastify reference auth routes", () => {
+    const auth = createServerAuth({ jwtSecret: "route-secret" });
+    const paths: string[] = [];
+
+    registerFastifyAuthRoutes(
+      {
+        post: (path) => {
+          paths.push(`POST ${path}`);
+        },
+        get: (path) => {
+          paths.push(`GET ${path}`);
+        }
+      },
+      { auth, jwtSecret: "route-secret", prefix: "/dolphin" }
+    );
+
+    expect(paths).toEqual([
+      "POST /dolphin/nonce",
+      "POST /dolphin/verify",
+      "GET /dolphin/me",
+      "POST /dolphin/logout"
+    ]);
   });
 });
 
@@ -462,3 +584,24 @@ describe("verifySuiPersonalMessage", () => {
     await expect(auth.verifySignIn(request)).rejects.toThrow("Nonce not_found");
   });
 });
+
+function createExpressResponse() {
+  return {
+    statusCode: 200,
+    body: undefined as unknown,
+    cookies: [] as unknown[],
+    status(code: number) {
+      this.statusCode = code;
+      return this;
+    },
+    json(body: unknown) {
+      this.body = body;
+    },
+    cookie(name: string, value: string, options: unknown) {
+      this.cookies.push({ name, value, options });
+    },
+    clearCookie(name: string, options: unknown) {
+      this.cookies.push({ name, value: "", options });
+    }
+  };
+}
