@@ -76,3 +76,16 @@ hooks.
   normalization.
 - `@dolphin-id/adapter-sui`: Wallet Standard-style discovery and connection, Sui
   personal-message construction/signing, and Sui address normalization.
+
+## Third-party Adapters
+
+Third-party adapters implement `ChainAdapter` from `@dolphin-id/core` and should
+pass the contract test shape documented in
+[`docs/adapter-spec.md`](adapter-spec.md).
+
+- Adapter methods cover discovery, connect, disconnect, account lookup, address
+  normalization, SIWX message creation, message signing, SIWX signing, and event
+  subscription.
+- Adapter events should be normalized with `normalizeDolphinEvent`.
+- `examples/adapter-third-party` provides a deterministic sample adapter and
+  contract test template.

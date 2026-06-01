@@ -41,6 +41,28 @@ importers:
         specifier: ^4.0.14
         version: 4.1.7(@types/node@25.9.1)(vite@8.0.14(@types/node@25.9.1)(esbuild@0.27.7))
 
+  apps/docs:
+    dependencies:
+      next:
+        specifier: ^16.0.7
+        version: 16.2.6(@playwright/test@1.60.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      react:
+        specifier: ^19.2.0
+        version: 19.2.6
+      react-dom:
+        specifier: ^19.2.0
+        version: 19.2.6(react@19.2.6)
+    devDependencies:
+      "@types/react-dom":
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.2.15)
+
+  examples/adapter-third-party:
+    dependencies:
+      "@dolphin-id/core":
+        specifier: workspace:*
+        version: link:../../packages/core
+
   examples/basic:
     dependencies:
       "@dolphin-id/adapter-evm":
