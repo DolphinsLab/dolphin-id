@@ -48,6 +48,10 @@ The Sui slice includes Wallet Standard-style discovery, connection and account
 events, personal-message sign-in payload construction, Sui address normalization,
 and server-side personal-message signature verification.
 
+The React slice provides a headless `DolphinProvider`, wallet/account/session
+hooks, endpoint-backed auth client configuration, and UI-free EVM/Sui SIWX
+sign-in flows.
+
 ## Local Development
 
 Install dependencies:
