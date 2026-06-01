@@ -6,23 +6,26 @@ repository is organized as a pnpm workspace with scoped packages under
 
 ## Workspace
 
-| Path                   | Package                     | Purpose                                                  |
-| ---------------------- | --------------------------- | -------------------------------------------------------- |
-| `packages/core`        | `@dolphin-id/core`          | Core chain, wallet, account, SIWX, and adapter contracts |
-| `packages/react`       | `@dolphin-id/react`         | React provider and headless hooks                        |
-| `packages/ui`          | `@dolphin-id/ui`            | Default wallet connection UI components                  |
-| `packages/adapter-evm` | `@dolphin-id/adapter-evm`   | EVM wallet adapter package                               |
-| `packages/adapter-sui` | `@dolphin-id/adapter-sui`   | Sui wallet adapter package                               |
-| `packages/server`      | `@dolphin-id/server`        | Node.js auth, nonce, verification, and session utilities |
-| `packages/cli`         | `@dolphin-id/cli`           | App scaffolder for runnable Next.js integrations         |
-| `examples/basic`       | `@dolphin-id/example-basic` | Minimal integration playground                           |
-| `examples/next`        | `@dolphin-id/example-next`  | Next.js EVM/Sui login and E2E verification               |
+| Path                           | Package                                   | Purpose                                                  |
+| ------------------------------ | ----------------------------------------- | -------------------------------------------------------- |
+| `packages/core`                | `@dolphin-id/core`                        | Core chain, wallet, account, SIWX, and adapter contracts |
+| `packages/react`               | `@dolphin-id/react`                       | React provider and headless hooks                        |
+| `packages/ui`                  | `@dolphin-id/ui`                          | Default wallet connection UI components                  |
+| `packages/adapter-evm`         | `@dolphin-id/adapter-evm`                 | EVM wallet adapter package                               |
+| `packages/adapter-sui`         | `@dolphin-id/adapter-sui`                 | Sui wallet adapter package                               |
+| `packages/server`              | `@dolphin-id/server`                      | Node.js auth, nonce, verification, and session utilities |
+| `packages/cli`                 | `@dolphin-id/cli`                         | App scaffolder for runnable Next.js integrations         |
+| `apps/docs`                    | `@dolphin-id/docs`                        | Public docs site and adapter development spec            |
+| `examples/basic`               | `@dolphin-id/example-basic`               | Minimal integration playground                           |
+| `examples/next`                | `@dolphin-id/example-next`                | Next.js EVM/Sui login and E2E verification               |
+| `examples/adapter-third-party` | `@dolphin-id/example-adapter-third-party` | Contract-tested sample third-party adapter               |
 
 ## Documentation
 
 - [Getting started](docs/getting-started.md)
 - [MVP API reference](docs/api-reference.md)
 - [CLI scaffolder](docs/cli.md)
+- [Third-party adapter specification](docs/adapter-spec.md)
 - [Security guide](docs/security.md)
 - [Troubleshooting](docs/troubleshooting.md)
 

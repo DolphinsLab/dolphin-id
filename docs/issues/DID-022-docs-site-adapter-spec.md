@@ -10,11 +10,24 @@ Build the public docs site and publish the third-party Adapter development speci
 
 ## Acceptance criteria
 
-- [ ] Docs site includes getting started, API reference, server SDK, hosted service, security, examples, and migration pages.
-- [ ] Adapter spec defines required methods, events, normalization, signing, and test fixtures.
-- [ ] A sample third-party adapter passes contract tests.
-- [ ] Docs clearly distinguish open-source core and hosted增值服务.
-- [ ] Search and versioned docs are available.
+- [x] Docs site includes getting started, API reference, server SDK, hosted service, security, examples, and migration pages.
+- [x] Adapter spec defines required methods, events, normalization, signing, and test fixtures.
+- [x] A sample third-party adapter passes contract tests.
+- [x] Docs clearly distinguish open-source core and hosted增值服务.
+- [x] Search and versioned docs are available.
+
+## Implementation notes
+
+- Added `apps/docs`, a Next.js docs site with versioned v1.0 draft pages,
+  on-page search, and routes for getting started, API reference, server SDKs,
+  hosted service, security, examples, migration, and adapter spec.
+- Added `docs/adapter-spec.md` and `docs/adapter-test-fixtures.md` to document
+  third-party adapter methods, events, normalization, signing, and deterministic
+  fixture expectations.
+- Added `examples/adapter-third-party`, a deterministic sample adapter with
+  contract tests for discovery, connection, SIWX message creation, signing, and
+  event unsubscribe behavior.
+- Updated README and API docs to link the docs site and adapter spec.
 
 ## Blocked by
 
