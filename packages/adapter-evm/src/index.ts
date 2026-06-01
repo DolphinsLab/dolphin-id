@@ -2,6 +2,7 @@ import { getAddress, numberToHex, type Address, type Hex } from "viem";
 import { createSiweMessage } from "viem/siwe";
 
 import {
+  createDolphinError,
   createIsoTimestamp,
   defineAdapter,
   normalizeDolphinEvent,
@@ -206,8 +207,7 @@ export function createEvmAdapter(options: EvmAdapterOptions): ChainAdapter {
         normalizeDolphinEvent({
           type: "disconnected",
           stage: "disconnect",
-          adapterId,
-          ...(wallet ? { wallet } : {})
+          adapterId
         })
       );
     },
@@ -585,13 +585,22 @@ function bindProviderEvents(
       })
     );
   });
-  provider.on?.("disconnect", () => {
+  provider.on?.("disconnect", (error) => {
     emit(
       normalizeDolphinEvent({
         type: "disconnected",
         stage: "disconnect",
         adapterId,
-        wallet
+        wallet,
+        error: createDolphinError({
+          code: "DISCONNECTED",
+          stage: "disconnect",
+          message: "EVM wallet disconnected.",
+          recoverable: true,
+          chainType: chain.type,
+          walletName: wallet.name,
+          cause: error
+        })
       })
     );
   });
