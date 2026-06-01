@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dolphin-id-server"
+version = "0.0.0"
+description = "Python server verification helpers for Dolphin ID."
+requires-python = ">=3.9"
+dependencies = [
+  "cryptography>=42",
+  "eth-hash[pycryptodome]>=0.7",
+  "eth-keys>=0.5",
+  "eth-utils>=4"
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

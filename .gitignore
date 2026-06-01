@@ -3,6 +3,11 @@ dist/
 coverage/
 test-results/
 **/test-results/
+.pytest_cache/
+__pycache__/
+.venv/
+target/
+*.egg-info/
 .turbo/
 .next/
 *.tsbuildinfo

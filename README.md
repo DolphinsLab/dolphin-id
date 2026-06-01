@@ -19,6 +19,9 @@ repository is organized as a pnpm workspace with scoped packages under
 | `packages/server`              | `@dolphin-id/server`                      | Node.js auth, nonce, verification, and session utilities |
 | `packages/cli`                 | `@dolphin-id/cli`                         | App scaffolder for runnable Next.js integrations         |
 | `packages/hosted`              | `@dolphin-id/hosted`                      | Hosted nonce/session service primitives                  |
+| `sdks/go`                      | Go server SDK                             | EVM/Sui verification and HS256 session claim helpers     |
+| `sdks/rust`                    | Rust server SDK                           | EVM/Sui verification and HS256 session claim helpers     |
+| `sdks/python`                  | Python server SDK                         | EVM/Sui verification and HS256 session claim helpers     |
 | `apps/docs`                    | `@dolphin-id/docs`                        | Public docs site and adapter development spec            |
 | `examples/basic`               | `@dolphin-id/example-basic`               | Minimal integration playground                           |
 | `examples/next`                | `@dolphin-id/example-next`                | Next.js EVM/Sui login and E2E verification               |
@@ -28,6 +31,7 @@ repository is organized as a pnpm workspace with scoped packages under
 
 - [Getting started](docs/getting-started.md)
 - [MVP API reference](docs/api-reference.md)
+- [Server SDKs](docs/server-sdks.md)
 - [CLI scaffolder](docs/cli.md)
 - [Third-party adapter specification](docs/adapter-spec.md)
 - [Security guide](docs/security.md)
@@ -82,6 +86,10 @@ signing, and server-side Ed25519 signature verification.
 
 The Bitcoin and Aptos slices add P2PKH Bitcoin and Ed25519 Aptos SIWX flows,
 chain-specific adapters, server verification helpers, and example wiring.
+
+The Go, Rust, and Python server SDKs provide v1.0 parity helpers for EVM SIWE,
+Sui personal-message verification, and HS256 session claim validation against
+the shared Node-generated fixture set.
 
 The React slice provides a headless `DolphinProvider`,
 wallet/account/identity/session hooks, endpoint-backed auth client
