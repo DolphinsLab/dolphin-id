@@ -36,6 +36,10 @@ for nonce, verification, and session flows.
 in-memory and Redis nonce stores, address-as-user repositories, SIWX verification
 orchestration, and configurable seven-day-by-default JWT sessions.
 
+The Sui slice includes Wallet Standard-style discovery, connection and account
+events, personal-message sign-in payload construction, Sui address normalization,
+and server-side personal-message signature verification.
+
 ## Local Development
 
 Install dependencies:

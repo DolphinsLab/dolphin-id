@@ -10,11 +10,11 @@ Deliver an end-to-end Sui login path using Wallet Standard discovery, wallet con
 
 ## Acceptance criteria
 
-- [ ] Sui adapter discovers compatible wallets through Wallet Standard.
-- [ ] Sui adapter connects, disconnects, and listens for account changes.
-- [ ] Sui SIWX messages include domain, address, chain identifier, nonce, issuedAt, and expirationTime.
-- [ ] Server verification validates the Sui signature and normalized address ownership.
-- [ ] Tests cover successful sign-in, rejected signature, wrong address, expired nonce, and replayed nonce.
+- [x] Sui adapter discovers compatible wallets through Wallet Standard.
+- [x] Sui adapter connects, disconnects, and listens for account changes.
+- [x] Sui SIWX messages include domain, address, chain identifier, nonce, issuedAt, and expirationTime.
+- [x] Server verification validates the Sui signature and normalized address ownership.
+- [x] Tests cover successful sign-in, rejected signature, wrong address, expired nonce, and replayed nonce.
 
 ## Blocked by
 

@@ -1,5 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
+import { normalizeSuiAddress } from "@mysten/sui/utils";
+import { verifyPersonalMessageSignature } from "@mysten/sui/verify";
 import type { ChainType, SiwxMessage } from "@dolphin-id/core";
 
 const DEFAULT_NONCE_TTL_MS = 5 * 60 * 1000;
@@ -282,6 +284,12 @@ export interface VerificationResult {
 
 export type SiwxVerifier = (request: VerificationRequest) => Promise<VerificationResult>;
 
+export interface SuiPersonalMessageVerificationOptions {
+  readonly expectedAddress?: string;
+  readonly expectedChainId?: string;
+  readonly now?: Date;
+}
+
 export interface VerifySignInRequest {
   readonly message: SiwxMessage;
   readonly signature: string;
@@ -412,6 +420,53 @@ export async function verifySiwxPlaceholder(
   return { ok: true, subject: request.message.address };
 }
 
+export async function verifySuiPersonalMessage(
+  request: VerificationRequest,
+  options: SuiPersonalMessageVerificationOptions = {}
+): Promise<VerificationResult> {
+  const message = request.message;
+
+  if (message.chainType !== "sui") {
+    return { ok: false, reason: "Sui message chain type must be sui." };
+  }
+
+  if (message.nonce !== request.nonce) {
+    return { ok: false, reason: "Sui nonce mismatch." };
+  }
+
+  const address = normalizeSuiAddress(message.address);
+
+  if (options.expectedAddress && address !== normalizeSuiAddress(options.expectedAddress)) {
+    return { ok: false, reason: "Sui address mismatch." };
+  }
+
+  if (options.expectedChainId && message.chainId !== options.expectedChainId) {
+    return { ok: false, reason: "Sui chain identifier mismatch." };
+  }
+
+  if (!message.expirationTime) {
+    return { ok: false, reason: "Sui expirationTime is required." };
+  }
+
+  if (new Date(message.expirationTime).getTime() <= (options.now ?? new Date()).getTime()) {
+    return { ok: false, reason: "Sui message expired." };
+  }
+
+  try {
+    await verifyPersonalMessageSignature(
+      new TextEncoder().encode(rawSuiPersonalMessage(message)),
+      request.signature,
+      {
+        address
+      }
+    );
+  } catch {
+    return { ok: false, reason: "Sui signature is invalid." };
+  }
+
+  return { ok: true, subject: address };
+}
+
 export function decodeJwtPayload(token: string): Readonly<Record<string, unknown>> {
   const [, payload] = token.split(".");
 
@@ -478,6 +533,24 @@ function accountFromSiwxMessage(message: SiwxMessage): UserAccount {
     chainId: message.chainId,
     address: normalizeAddress(message.address)
   };
+}
+
+function rawSuiPersonalMessage(message: SiwxMessage): string {
+  if (message.raw) {
+    return message.raw;
+  }
+
+  return [
+    "Dolphin ID Sui Sign-In",
+    `Domain: ${message.domain}`,
+    `Address: ${normalizeSuiAddress(message.address)}`,
+    `Chain ID: ${message.chainId}`,
+    `Nonce: ${message.nonce}`,
+    `URI: ${message.uri}`,
+    `Issued At: ${message.issuedAt}`,
+    ...(message.expirationTime ? [`Expiration Time: ${message.expirationTime}`] : []),
+    ...(message.statement ? [`Statement: ${message.statement}`] : [])
+  ].join("\n");
 }
 
 function assertNonceMatchesMessage(record: NonceRecord, message: SiwxMessage): void {
