@@ -5,6 +5,7 @@ import {
   formatChainLabel,
   getConnectButtonLabel,
   groupWalletsByChain,
+  resolveDolphinMessages,
   shortenAddress
 } from "./index";
 import type { Wallet } from "@dolphin-id/core";
@@ -17,6 +18,20 @@ describe("UI helpers", () => {
       "0x1234...7890"
     );
     expect(getConnectButtonLabel({ status: "signed-in" })).toBe("Signed in");
+  });
+
+  it("ships Chinese copy and allows consumer overrides", () => {
+    expect(resolveDolphinMessages("zh-CN").connectWallet).toBe("连接钱包");
+    expect(resolveDolphinMessages("en-US", { connectWallet: "Link wallet" })).toMatchObject({
+      connectWallet: "Link wallet",
+      disconnect: "Disconnect"
+    });
+    expect(
+      getConnectButtonLabel({
+        status: "idle",
+        messages: resolveDolphinMessages("zh-CN")
+      })
+    ).toBe("连接钱包");
   });
 
   it("groups wallets by their first supported chain", () => {
@@ -40,10 +55,23 @@ describe("UI helpers", () => {
     expect(shortenAddress("0x1234")).toBe("0x1234");
   });
 
-  it("provides distinct light and dark theme tokens", () => {
+  it("provides distinct theme tokens for color, font, radius, and spacing", () => {
     expect(createDolphinThemeStyles("light").background).not.toBe(
       createDolphinThemeStyles("dark").background
     );
+    expect(
+      createDolphinThemeStyles({
+        accent: "#0057ff",
+        fontFamily: "Inter",
+        radius: 6,
+        spacing: 10
+      })
+    ).toMatchObject({
+      accent: "#0057ff",
+      fontFamily: "Inter",
+      radius: 6,
+      spacing: 10
+    });
     expect(formatChainLabel("evm")).toBe("EVM");
   });
 });

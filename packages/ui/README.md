@@ -13,5 +13,18 @@
   action.
 
 All components accept `theme="light"`, `theme="dark"`, or a `DolphinTheme`
-object for token overrides. Layout styles use constrained widths, ellipsis, and
-wrapping-safe row spacing for mobile surfaces.
+object for token overrides. Theme tokens cover color, accent foreground, font
+family, border radius, and spacing. Layout styles use constrained widths,
+ellipsis, and wrapping-safe row spacing for mobile surfaces.
+
+## Localization
+
+The default copy ships with `en-US` and `zh-CN`.
+
+```tsx
+<ConnectButton locale="zh-CN" />
+<AccountDisplay messages={{ disconnect: "Sign out" }} />
+```
+
+Every component accepts `messages` for copy overrides, so product teams can keep
+the default behavior while matching their own terminology.
