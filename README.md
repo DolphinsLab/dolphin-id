@@ -52,6 +52,10 @@ The React slice provides a headless `DolphinProvider`, wallet/account/session
 hooks, endpoint-backed auth client configuration, and UI-free EVM/Sui SIWX
 sign-in flows.
 
+The UI slice layers optional default components on top of the headless hooks:
+connect button, chain-grouped wallet modal, account display, disconnect action,
+and light/dark theme tokens.
+
 ## Local Development
 
 Install dependencies:
