@@ -133,7 +133,6 @@ export function createSuiAdapter(options: SuiAdapterOptions): ChainAdapter {
     },
     async disconnect() {
       await activeWallet?.wallet.features["standard:disconnect"]?.disconnect();
-      const wallet = activeWallet;
       activeWallet = null;
       activeAccount = null;
       activeWalletAccount = null;
@@ -141,8 +140,7 @@ export function createSuiAdapter(options: SuiAdapterOptions): ChainAdapter {
         normalizeDolphinEvent({
           type: "disconnected",
           stage: "disconnect",
-          adapterId,
-          ...(wallet ? { wallet } : {})
+          adapterId
         })
       );
     },
