@@ -182,6 +182,12 @@ importers:
         specifier: ">=18"
         version: 19.2.6
 
+  packages/hosted:
+    dependencies:
+      "@dolphin-id/server":
+        specifier: workspace:*
+        version: link:../server
+
   packages/server:
     dependencies:
       "@dolphin-id/core":

@@ -18,6 +18,7 @@ repository is organized as a pnpm workspace with scoped packages under
 | `packages/adapter-solana`      | `@dolphin-id/adapter-solana`              | Solana wallet adapter package                            |
 | `packages/server`              | `@dolphin-id/server`                      | Node.js auth, nonce, verification, and session utilities |
 | `packages/cli`                 | `@dolphin-id/cli`                         | App scaffolder for runnable Next.js integrations         |
+| `packages/hosted`              | `@dolphin-id/hosted`                      | Hosted nonce/session service primitives                  |
 | `apps/docs`                    | `@dolphin-id/docs`                        | Public docs site and adapter development spec            |
 | `examples/basic`               | `@dolphin-id/example-basic`               | Minimal integration playground                           |
 | `examples/next`                | `@dolphin-id/example-next`                | Next.js EVM/Sui login and E2E verification               |
@@ -57,6 +58,10 @@ verification orchestration, and configurable seven-day-by-default JWT sessions.
 `@dolphin-id/cli` scaffolds runnable Next.js apps with selectable EVM/Sui chains,
 default UI or headless hooks, self-hosted or hosted auth, and cookie or
 memory-only session storage.
+
+`@dolphin-id/hosted` wraps the server auth core with project API keys, allowed
+domains, usage limits, billing hooks, and audit logs for the optional managed
+nonce/session service.
 
 Errors, events, and React-facing state also live in `@dolphin-id/core` so
 adapters, hooks, UI, and server calls report failures and lifecycle transitions

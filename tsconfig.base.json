@@ -13,6 +13,7 @@
       "@dolphin-id/adapter-evm": ["packages/adapter-evm/src/index.ts"],
       "@dolphin-id/adapter-solana": ["packages/adapter-solana/src/index.ts"],
       "@dolphin-id/adapter-sui": ["packages/adapter-sui/src/index.ts"],
+      "@dolphin-id/hosted": ["packages/hosted/src/index.ts"],
       "@dolphin-id/server": ["packages/server/src/index.ts"]
     },
     "jsx": "react-jsx",
