@@ -44,7 +44,9 @@ hooks.
 - `WalletModal`: groups wallets by chain, shows install/connection status, and
   connects a selected wallet.
 - `AccountDisplay`: shows chain label, shortened address, and disconnect action.
-- `DolphinTheme`: light, dark, or custom token overrides.
+- `DolphinTheme`: light, dark, or custom token overrides for color, font,
+  radius, and spacing.
+- `DolphinMessages`: `en-US` and `zh-CN` copy with consumer override support.
 
 ## Server SDK
 
