@@ -3,6 +3,7 @@ import { isValidSuiAddress, normalizeSuiAddress } from "@mysten/sui/utils";
 import {
   createIsoTimestamp,
   defineAdapter,
+  normalizeDolphinEvent,
   type Account,
   type AdapterEvent,
   type AdapterEventHandler,
@@ -118,16 +119,32 @@ export function createSuiAdapter(options: SuiAdapterOptions): ChainAdapter {
       activeAccount = account;
       activeWalletAccount = walletAccount;
       bindWalletEvents(wallet.wallet, wallet, adapterId, chain, emit);
-      emit({ type: "accountsChanged", adapterId, wallet, accounts: [account] });
+      emit(
+        normalizeDolphinEvent({
+          type: "accountsChanged",
+          stage: "account-change",
+          adapterId,
+          wallet,
+          accounts: [account]
+        })
+      );
 
       return { wallet, accounts: [account] };
     },
     async disconnect() {
       await activeWallet?.wallet.features["standard:disconnect"]?.disconnect();
+      const wallet = activeWallet;
       activeWallet = null;
       activeAccount = null;
       activeWalletAccount = null;
-      emit({ type: "disconnect", adapterId });
+      emit(
+        normalizeDolphinEvent({
+          type: "disconnected",
+          stage: "disconnect",
+          adapterId,
+          ...(wallet ? { wallet } : {})
+        })
+      );
     },
     async getAccounts() {
       return activeAccount ? [activeAccount] : [];
@@ -290,7 +307,15 @@ function bindWalletEvents(
         ...(account.publicKey ? { publicKey: account.publicKey } : {})
       };
     });
-    emit({ type: "accountsChanged", adapterId, wallet, accounts });
+    emit(
+      normalizeDolphinEvent({
+        type: "accountsChanged",
+        stage: "account-change",
+        adapterId,
+        wallet,
+        accounts
+      })
+    );
   });
 }
 
