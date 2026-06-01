@@ -15,6 +15,14 @@ repository is organized as a pnpm workspace with scoped packages under
 | `packages/adapter-sui` | `@dolphin-id/adapter-sui`   | Sui wallet adapter package                               |
 | `packages/server`      | `@dolphin-id/server`        | Node.js auth, nonce, verification, and session utilities |
 | `examples/basic`       | `@dolphin-id/example-basic` | Minimal integration playground                           |
+| `examples/next`        | `@dolphin-id/example-next`  | Next.js EVM/Sui login and E2E verification               |
+
+## Documentation
+
+- [Getting started](docs/getting-started.md)
+- [MVP API reference](docs/api-reference.md)
+- [Security guide](docs/security.md)
+- [Troubleshooting](docs/troubleshooting.md)
 
 ## Package Boundaries
 
