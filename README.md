@@ -40,6 +40,10 @@ Errors, events, and React-facing state also live in `@dolphin-id/core` so
 adapters, hooks, UI, and server calls report failures and lifecycle transitions
 with the same codes, stages, recoverability flags, and state statuses.
 
+The EVM slice includes EIP-6963 injected wallet discovery, EIP-1193 connection
+and event handling, EIP-4361 SIWE message creation, `personal_sign` signing, and
+server-side SIWE signature verification.
+
 The Sui slice includes Wallet Standard-style discovery, connection and account
 events, personal-message sign-in payload construction, Sui address normalization,
 and server-side personal-message signature verification.
