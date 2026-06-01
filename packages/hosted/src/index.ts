@@ -4,6 +4,7 @@ import {
   createServerAuth,
   type AuthRouteRequest,
   type NonceRecord,
+  type RuntimeEnvironment,
   type ServerAuth,
   type SessionCookieOptionsInput,
   type User,
@@ -82,6 +83,20 @@ export interface HostedAuditLogStore {
   list(projectId?: string): Promise<readonly HostedAuditEvent[]>;
 }
 
+export interface HostedSessionBinding {
+  readonly tokenHash: string;
+  readonly projectId: string;
+  readonly subject: string;
+  readonly createdAt: Date;
+  readonly expiresAt: Date;
+}
+
+export interface HostedSessionBindingStore {
+  bind(binding: HostedSessionBinding): Promise<void>;
+  get(tokenHash: string): Promise<HostedSessionBinding | null>;
+  revokeSubject(projectId: string, subject: string): Promise<void>;
+}
+
 export interface HostedBillingHook {
   recordUsage(event: HostedBillingUsageEvent): Promise<void> | void;
 }
@@ -96,8 +111,11 @@ export interface HostedBillingUsageEvent {
 export interface HostedAuthServiceOptions {
   readonly auth?: ServerAuth;
   readonly jwtSecret?: string;
+  readonly runtimeEnvironment?: RuntimeEnvironment;
+  readonly allowWeakJwtSecret?: boolean;
   readonly projectStore?: HostedProjectStore;
   readonly auditLogStore?: HostedAuditLogStore;
+  readonly sessionBindingStore?: HostedSessionBindingStore;
   readonly billingHook?: HostedBillingHook;
   readonly cookie?: SessionCookieOptionsInput;
 }
@@ -139,6 +157,7 @@ export interface HostedInvalidateSessionRequest {
 export interface HostedAuthService {
   readonly projects: HostedProjectStore;
   readonly auditLogs: HostedAuditLogStore;
+  readonly sessionBindings: HostedSessionBindingStore;
   issueNonce(request: HostedIssueNonceRequest): Promise<NonceRecord>;
   verifyLogin(request: HostedVerifyLoginRequest): Promise<HostedVerifyLoginResult>;
   currentUser(request: HostedCurrentUserRequest): Promise<HostedCurrentUserResult>;
@@ -151,10 +170,23 @@ export class InMemoryHostedProjectStore implements HostedProjectStore {
 
   async createProject(input: CreateHostedProjectInput): Promise<HostedProject> {
     const now = input.now ?? new Date();
+    const allowedDomains = [...new Set(input.allowedDomains.map(normalizeDomain))];
+
+    if (allowedDomains.length === 0) {
+      throw new Error("Hosted project must allow at least one domain.");
+    }
+
+    if (
+      input.quotaLimit !== undefined &&
+      (!Number.isSafeInteger(input.quotaLimit) || input.quotaLimit < 1)
+    ) {
+      throw new Error("Hosted project quota limit must be a positive integer.");
+    }
+
     const project: HostedProject = {
       id: `hprj_${randomBytes(12).toString("base64url")}`,
       name: input.name,
-      allowedDomains: [...new Set(input.allowedDomains.map(normalizeDomain))],
+      allowedDomains,
       quotaLimit: input.quotaLimit ?? 10_000,
       usageCount: 0,
       status: "active",
@@ -182,7 +214,7 @@ export class InMemoryHostedProjectStore implements HostedProjectStore {
     const apiKey: HostedApiKey = {
       id,
       projectId,
-      keyHash: hashApiKey(secret),
+      keyHash: hashSensitiveValue(secret),
       createdAt: options.now ?? new Date()
     };
 
@@ -194,7 +226,7 @@ export class InMemoryHostedProjectStore implements HostedProjectStore {
     const id = parseApiKeyId(apiKey);
     const record = id ? this.#apiKeys.get(id) : undefined;
 
-    if (!record || record.revokedAt || record.keyHash !== hashApiKey(apiKey)) {
+    if (!record || record.revokedAt || record.keyHash !== hashSensitiveValue(apiKey)) {
       return null;
     }
 
@@ -251,11 +283,37 @@ export class InMemoryHostedAuditLogStore implements HostedAuditLogStore {
   }
 }
 
+export class InMemoryHostedSessionBindingStore implements HostedSessionBindingStore {
+  readonly #bindings = new Map<string, HostedSessionBinding>();
+
+  async bind(binding: HostedSessionBinding): Promise<void> {
+    this.#bindings.set(binding.tokenHash, binding);
+  }
+
+  async get(tokenHash: string): Promise<HostedSessionBinding | null> {
+    return this.#bindings.get(tokenHash) ?? null;
+  }
+
+  async revokeSubject(projectId: string, subject: string): Promise<void> {
+    for (const [tokenHash, binding] of this.#bindings) {
+      if (binding.projectId === projectId && binding.subject === subject) {
+        this.#bindings.delete(tokenHash);
+      }
+    }
+  }
+}
+
 export function createHostedAuthService(options: HostedAuthServiceOptions = {}): HostedAuthService {
   const auth =
-    options.auth ?? createServerAuth({ jwtSecret: options.jwtSecret ?? "hosted-secret" });
+    options.auth ??
+    createServerAuth({
+      jwtSecret: options.jwtSecret ?? "hosted-secret",
+      ...(options.runtimeEnvironment ? { runtimeEnvironment: options.runtimeEnvironment } : {}),
+      ...(options.allowWeakJwtSecret ? { allowWeakJwtSecret: options.allowWeakJwtSecret } : {})
+    });
   const projects = options.projectStore ?? new InMemoryHostedProjectStore();
   const auditLogs = options.auditLogStore ?? new InMemoryHostedAuditLogStore();
+  const sessionBindings = options.sessionBindingStore ?? new InMemoryHostedSessionBindingStore();
   const usersBySubject = new Map<string, User>();
 
   const authenticate = async (apiKey: string): Promise<HostedProject> => {
@@ -286,52 +344,77 @@ export function createHostedAuthService(options: HostedAuthServiceOptions = {}):
   return {
     projects,
     auditLogs,
+    sessionBindings,
     async issueNonce(request) {
       const now = request.now ?? new Date();
       const project = await authenticate(request.apiKey);
-      assertDomainAllowed(project, request.domain);
-      await recordUsage(project, "nonce", now);
-      const nonce = await auth.issueNonce({
-        now,
-        domain: normalizeDomain(request.domain),
-        ...(request.address ? { address: request.address } : {}),
-        ...(request.chainType ? { chainType: request.chainType } : {}),
-        ...(request.walletName ? { walletName: request.walletName } : {})
-      });
 
-      await appendAudit(auditLogs, {
-        type: "nonce.issued",
-        projectId: project.id,
-        domain: normalizeDomain(request.domain),
-        success: true,
-        occurredAt: now
-      });
-      return nonce;
+      try {
+        const domain = normalizeDomain(request.domain);
+        assertDomainAllowed(project, domain);
+        await recordUsage(project, "nonce", now);
+        const nonce = await auth.issueNonce({
+          now,
+          domain,
+          ...(request.address ? { address: request.address } : {}),
+          ...(request.chainType ? { chainType: request.chainType } : {}),
+          ...(request.walletName ? { walletName: request.walletName } : {})
+        });
+
+        await appendAudit(auditLogs, {
+          type: "nonce.issued",
+          projectId: project.id,
+          domain,
+          success: true,
+          occurredAt: now
+        });
+        return nonce;
+      } catch (error) {
+        const domain = readAuditDomain(request.domain);
+        await appendAudit(auditLogs, {
+          type: "nonce.issued",
+          projectId: project.id,
+          ...(domain ? { domain } : {}),
+          success: false,
+          reason: error instanceof Error ? error.message : "Hosted nonce issue failed.",
+          occurredAt: now
+        });
+        throw error;
+      }
     },
     async verifyLogin(request) {
       const now = request.now ?? new Date();
       const project = await authenticate(request.apiKey);
-      assertDomainAllowed(project, request.message.domain);
-      assertUsageAvailable(project);
 
       try {
+        const domain = normalizeDomain(request.message.domain);
+        assertDomainAllowed(project, domain);
+        assertUsageAvailable(project);
         const result = await auth.verifySignIn(request);
         const updatedProject = await recordUsage(project, "verify", now);
         usersBySubject.set(result.user.id, result.user);
+        await sessionBindings.bind({
+          tokenHash: hashSensitiveValue(result.session.token),
+          projectId: project.id,
+          subject: result.session.subject,
+          createdAt: now,
+          expiresAt: result.session.expiresAt
+        });
         await appendAudit(auditLogs, {
           type: "verify.succeeded",
           projectId: project.id,
           subject: result.user.id,
-          domain: normalizeDomain(request.message.domain),
+          domain,
           success: true,
           occurredAt: now
         });
         return { ...result, project: updatedProject };
       } catch (error) {
+        const domain = readAuditDomain(request.message.domain);
         await appendAudit(auditLogs, {
           type: "verify.failed",
           projectId: project.id,
-          domain: normalizeDomain(request.message.domain),
+          ...(domain ? { domain } : {}),
           success: false,
           reason: error instanceof Error ? error.message : "Hosted verification failed.",
           occurredAt: now
@@ -342,29 +425,53 @@ export function createHostedAuthService(options: HostedAuthServiceOptions = {}):
     async currentUser(request) {
       const now = request.now ?? new Date();
       const project = await authenticate(request.apiKey);
-      assertUsageAvailable(project);
-      const session = await auth.verifySession(request.token, { now });
-      const updatedProject = await recordUsage(project, "session", now);
 
-      await appendAudit(auditLogs, {
-        type: "session.read",
-        projectId: project.id,
-        subject: session.subject,
-        success: true,
-        occurredAt: now
-      });
-      return {
-        project: updatedProject,
-        session,
-        ...(usersBySubject.get(session.subject)
-          ? { user: usersBySubject.get(session.subject) as User }
-          : {})
-      };
+      try {
+        assertUsageAvailable(project);
+        const session = await auth.verifySession(request.token, { now });
+        const binding = await sessionBindings.get(hashSensitiveValue(request.token));
+
+        if (
+          !binding ||
+          binding.projectId !== project.id ||
+          binding.subject !== session.subject ||
+          binding.expiresAt.getTime() <= now.getTime()
+        ) {
+          throw new Error("Hosted session is not scoped to this project.");
+        }
+
+        const updatedProject = await recordUsage(project, "session", now);
+
+        await appendAudit(auditLogs, {
+          type: "session.read",
+          projectId: project.id,
+          subject: session.subject,
+          success: true,
+          occurredAt: now
+        });
+        return {
+          project: updatedProject,
+          session,
+          ...(usersBySubject.get(session.subject)
+            ? { user: usersBySubject.get(session.subject) as User }
+            : {})
+        };
+      } catch (error) {
+        await appendAudit(auditLogs, {
+          type: "session.read",
+          projectId: project.id,
+          success: false,
+          reason: error instanceof Error ? error.message : "Hosted session read failed.",
+          occurredAt: now
+        });
+        throw error;
+      }
     },
     async invalidateSession(request) {
       const now = new Date();
       const project = await authenticate(request.apiKey);
       const version = await auth.invalidateSessions(request.subject);
+      await sessionBindings.revokeSubject(project.id, request.subject);
 
       await appendAudit(auditLogs, {
         type: "session.invalidated",
@@ -403,11 +510,65 @@ function assertUsageAvailable(project: HostedProject): void {
 }
 
 function normalizeDomain(domain: string): string {
-  return domain.trim().toLowerCase();
+  const normalized = domain.trim().toLowerCase();
+
+  if (!normalized) {
+    throw new Error("Hosted project domain is required.");
+  }
+
+  if (
+    normalized.includes("://") ||
+    normalized.includes("/") ||
+    normalized.includes("?") ||
+    normalized.includes("#") ||
+    normalized.includes("@") ||
+    normalized.startsWith("*.") ||
+    /\s/.test(normalized)
+  ) {
+    throw new Error("Hosted project domain must be a hostname or hostname:port.");
+  }
+
+  const [hostname, port, ...rest] = normalized.split(":");
+
+  if (
+    rest.length > 0 ||
+    !hostname ||
+    !isValidHostname(hostname) ||
+    (port !== undefined && !isValidPort(port))
+  ) {
+    throw new Error("Hosted project domain must be a hostname or hostname:port.");
+  }
+
+  return normalized;
 }
 
-function hashApiKey(apiKey: string): string {
-  return createHash("sha256").update(apiKey).digest("base64url");
+function isValidHostname(hostname: string): boolean {
+  if (hostname === "localhost") {
+    return true;
+  }
+
+  if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(hostname)) {
+    return hostname.split(".").every((part) => Number(part) <= 255);
+  }
+
+  if (hostname.length > 253 || !hostname.includes(".")) {
+    return false;
+  }
+
+  return hostname.split(".").every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
+}
+
+function isValidPort(port: string): boolean {
+  if (!/^\d+$/.test(port)) {
+    return false;
+  }
+
+  const parsed = Number(port);
+  return parsed >= 1 && parsed <= 65_535;
+}
+
+function hashSensitiveValue(value: string): string {
+  return createHash("sha256").update(value).digest("base64url");
 }
 
 function parseApiKeyId(apiKey: string): string | undefined {
@@ -417,6 +578,14 @@ function parseApiKeyId(apiKey: string): string | undefined {
 
   const [id] = apiKey.slice("dhk_".length).split(".");
   return id?.startsWith("hkey_") ? id : undefined;
+}
+
+function readAuditDomain(domain: string): string | undefined {
+  try {
+    return normalizeDomain(domain);
+  } catch {
+    return domain.trim().slice(0, 255) || undefined;
+  }
 }
 
 async function appendAudit(
