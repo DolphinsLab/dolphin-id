@@ -28,7 +28,7 @@ test("docs content distinguishes open-source core and hosted service", () => {
 });
 
 test("docs content exposes versioned pages and search terms", () => {
-  assert.match(content, /v1\.0 draft/);
+  assert.match(content, /v1\.0 stable/);
   assert.match(homePage, /DocsSearch/);
   assert.match(content, /third-party adapters/i);
 });

@@ -1,4 +1,4 @@
-export const docsVersion = "v1.0 draft";
+export const docsVersion = "v1.0 stable";
 
 export interface DocsPage {
   readonly slug: string;

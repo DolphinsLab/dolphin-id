@@ -1,6 +1,6 @@
 {
   "name": "@dolphin-id/adapter-solana",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Solana wallet adapter package for Dolphin ID.",
   "type": "module",
   "sideEffects": false,
