@@ -56,6 +56,10 @@ The UI slice layers optional default components on top of the headless hooks:
 connect button, chain-grouped wallet modal, account display, disconnect action,
 and light/dark theme tokens.
 
+`examples/next` demonstrates the full browser loop with mocked EVM and Sui
+wallets, default UI components, self-hosted Next.js auth routes, and Playwright
+E2E coverage for session recovery after refresh.
+
 ## Local Development
 
 Install dependencies:

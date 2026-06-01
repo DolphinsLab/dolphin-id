@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+.turbo/
+.next/
+**/.next/
+test-results/
+**/test-results/
+*.tsbuildinfo
