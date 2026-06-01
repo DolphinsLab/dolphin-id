@@ -6,7 +6,9 @@ import {
   InMemoryNonceStore,
   InMemoryUserRepository,
   RedisNonceStore,
+  assertProductionSafeUrl,
   createServerAuth,
+  createSessionCookieOptions,
   decodeJwtPayload,
   issueJwtSession,
   verifyEvmSiweMessage,
@@ -137,6 +139,93 @@ describe("createServerAuth", () => {
       chainId: "1",
       address: "0xabc"
     });
+  });
+
+  it("requires nonce domain binding during sign-in verification", async () => {
+    const auth = createServerAuth({
+      jwtSecret: "secret",
+      verifySiwx: async ({ message }) => ({ ok: true, subject: message.address })
+    });
+    const issuedAt = new Date("2026-01-01T00:00:00.000Z");
+    const nonce = await auth.issueNonce({
+      now: issuedAt,
+      chainType: "evm",
+      address: "0xABC"
+    });
+
+    await expect(
+      auth.verifySignIn({
+        now: issuedAt,
+        nonce: nonce.nonce,
+        signature: "0xsignature",
+        message: {
+          format: "eip4361",
+          chainType: "evm",
+          domain: "example.com",
+          address: "0xABC",
+          uri: "https://example.com/login",
+          version: "1",
+          chainId: "1",
+          nonce: nonce.nonce,
+          issuedAt: issuedAt.toISOString()
+        }
+      })
+    ).rejects.toThrow("Nonce domain is required");
+  });
+});
+
+describe("security controls", () => {
+  it("rejects weak JWT secrets in production", () => {
+    expect(() =>
+      createServerAuth({
+        jwtSecret: "secret",
+        runtimeEnvironment: "production"
+      })
+    ).toThrow("JWT secret must be at least");
+  });
+
+  it("allows explicitly overridden weak JWT secrets outside production review paths", () => {
+    expect(() =>
+      createServerAuth({
+        jwtSecret: "secret",
+        runtimeEnvironment: "production",
+        allowWeakJwtSecret: true
+      })
+    ).not.toThrow();
+  });
+
+  it("rejects production HTTP origins unless explicitly overridden", () => {
+    expect(() =>
+      assertProductionSafeUrl("http://example.com", {
+        runtimeEnvironment: "production",
+        label: "publicOrigin"
+      })
+    ).toThrow("publicOrigin must use HTTPS in production");
+    expect(() =>
+      assertProductionSafeUrl("http://example.com", {
+        runtimeEnvironment: "production",
+        allowInsecureHttp: true
+      })
+    ).not.toThrow();
+  });
+
+  it("creates secure session cookie options for production", () => {
+    expect(createSessionCookieOptions({ runtimeEnvironment: "production" })).toMatchObject({
+      name: "dolphin_session",
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      path: "/"
+    });
+    expect(() =>
+      createSessionCookieOptions({
+        runtimeEnvironment: "production",
+        secure: false
+      })
+    ).toThrow("Secure session cookies are required in production");
+    expect(() => createSessionCookieOptions({ sameSite: "none", secure: false })).toThrow(
+      "SameSite=None session cookies must also set Secure"
+    );
   });
 });
 
@@ -340,7 +429,12 @@ describe("verifySuiPersonalMessage", () => {
       jwtSecret: "secret",
       verifySiwx: (request) => verifySuiPersonalMessage(request, { now: issuedAt })
     });
-    const nonce = await auth.issueNonce({ now: issuedAt, chainType: "sui", address });
+    const nonce = await auth.issueNonce({
+      now: issuedAt,
+      domain: "example.com",
+      chainType: "sui",
+      address
+    });
     const raw = `Dolphin ID Sui Sign-In\nDomain: example.com\nAddress: ${address}\nChain ID: testnet\nNonce: ${nonce.nonce}\nURI: https://example.com/login\nIssued At: ${issuedAt.toISOString()}\nExpiration Time: 2026-01-01T00:05:00.000Z`;
     const signature = (await keypair.signPersonalMessage(new TextEncoder().encode(raw))).signature;
     const request = {

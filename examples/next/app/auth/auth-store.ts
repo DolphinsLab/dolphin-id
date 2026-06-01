@@ -3,7 +3,7 @@ import { createServerAuth, decodeJwtPayload, type VerificationRequest } from "@d
 export const SESSION_COOKIE = "dolphin_session";
 
 export const auth = createServerAuth({
-  jwtSecret: "local-development-secret",
+  jwtSecret: "local-development-secret-with-32-plus-characters",
   verifySiwx: async (request: VerificationRequest) => {
     const expected = `mock-siwx:${request.message.format}:${request.nonce}:${request.message.address}`;
 
