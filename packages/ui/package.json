@@ -25,6 +25,10 @@
   "peerDependencies": {
     "react": ">=18"
   },
+  "dependencies": {
+    "@dolphin-id/core": "workspace:*",
+    "@dolphin-id/react": "workspace:*"
+  },
   "publishConfig": {
     "access": "public"
   }
