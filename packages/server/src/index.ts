@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 import { ed25519 } from "@noble/curves/ed25519";
+import { secp256k1 } from "@noble/curves/secp256k1";
 import { normalizeSuiAddress } from "@mysten/sui/utils";
 import { verifyPersonalMessageSignature } from "@mysten/sui/verify";
 import type { ChainType, SiwxMessage } from "@dolphin-id/core";
@@ -499,6 +500,20 @@ export interface EvmSiweVerificationOptions {
 }
 
 export interface SolanaSiwsVerificationOptions {
+  readonly expectedDomain?: string;
+  readonly expectedAddress?: string;
+  readonly expectedChainId?: string;
+  readonly now?: Date;
+}
+
+export interface BitcoinSiwxVerificationOptions {
+  readonly expectedDomain?: string;
+  readonly expectedAddress?: string;
+  readonly expectedChainId?: string;
+  readonly now?: Date;
+}
+
+export interface AptosSiwxVerificationOptions {
   readonly expectedDomain?: string;
   readonly expectedAddress?: string;
   readonly expectedChainId?: string;
@@ -1231,6 +1246,159 @@ export async function verifySolanaSiwsMessage(
   return { ok: true, subject: address };
 }
 
+export async function verifyBitcoinSiwxMessage(
+  request: VerificationRequest,
+  options: BitcoinSiwxVerificationOptions = {}
+): Promise<VerificationResult> {
+  const message = request.message;
+
+  if (message.chainType !== "bitcoin") {
+    return { ok: false, reason: "Bitcoin message chain type must be bitcoin." };
+  }
+
+  if (message.nonce !== request.nonce) {
+    return { ok: false, reason: "Bitcoin nonce mismatch." };
+  }
+
+  if (options.expectedDomain && message.domain !== options.expectedDomain) {
+    return { ok: false, reason: "Bitcoin domain mismatch." };
+  }
+
+  if (options.expectedChainId && message.chainId !== options.expectedChainId) {
+    return { ok: false, reason: "Bitcoin chain identifier mismatch." };
+  }
+
+  let address: string;
+
+  try {
+    address = normalizeBitcoinAddress(message.address, message.chainId);
+  } catch {
+    return { ok: false, reason: "Bitcoin address is invalid." };
+  }
+
+  if (
+    options.expectedAddress &&
+    address !== normalizeBitcoinAddress(options.expectedAddress, message.chainId)
+  ) {
+    return { ok: false, reason: "Bitcoin address mismatch." };
+  }
+
+  if (!message.expirationTime) {
+    return { ok: false, reason: "Bitcoin expirationTime is required." };
+  }
+
+  if (new Date(message.expirationTime).getTime() <= (options.now ?? new Date()).getTime()) {
+    return { ok: false, reason: "Bitcoin message expired." };
+  }
+
+  const [encodedPublicKey, encodedSignature] = request.signature.split(":");
+
+  if (!encodedPublicKey || !encodedSignature) {
+    return { ok: false, reason: "Bitcoin signature payload is invalid." };
+  }
+
+  let publicKey: Uint8Array;
+  let signature: Uint8Array;
+
+  try {
+    publicKey = base58.decode(encodedPublicKey);
+    signature = base58.decode(encodedSignature);
+  } catch {
+    return { ok: false, reason: "Bitcoin signature is invalid." };
+  }
+
+  if (bitcoinP2pkhAddress(publicKey, message.chainId) !== address) {
+    return { ok: false, reason: "Bitcoin public key does not match address." };
+  }
+
+  const valid = secp256k1.verify(
+    signature,
+    createHash("sha256").update(rawBitcoinSiwxMessage(message)).digest(),
+    publicKey
+  );
+
+  if (!valid) {
+    return { ok: false, reason: "Bitcoin signature is invalid." };
+  }
+
+  return { ok: true, subject: address };
+}
+
+export async function verifyAptosSiwxMessage(
+  request: VerificationRequest,
+  options: AptosSiwxVerificationOptions = {}
+): Promise<VerificationResult> {
+  const message = request.message;
+
+  if (message.chainType !== "aptos") {
+    return { ok: false, reason: "Aptos message chain type must be aptos." };
+  }
+
+  if (message.nonce !== request.nonce) {
+    return { ok: false, reason: "Aptos nonce mismatch." };
+  }
+
+  if (options.expectedDomain && message.domain !== options.expectedDomain) {
+    return { ok: false, reason: "Aptos domain mismatch." };
+  }
+
+  if (options.expectedChainId && message.chainId !== options.expectedChainId) {
+    return { ok: false, reason: "Aptos chain identifier mismatch." };
+  }
+
+  let address: string;
+
+  try {
+    address = normalizeAptosAddress(message.address);
+  } catch {
+    return { ok: false, reason: "Aptos address is invalid." };
+  }
+
+  if (options.expectedAddress && address !== normalizeAptosAddress(options.expectedAddress)) {
+    return { ok: false, reason: "Aptos address mismatch." };
+  }
+
+  if (!message.expirationTime) {
+    return { ok: false, reason: "Aptos expirationTime is required." };
+  }
+
+  if (new Date(message.expirationTime).getTime() <= (options.now ?? new Date()).getTime()) {
+    return { ok: false, reason: "Aptos message expired." };
+  }
+
+  const [encodedPublicKey, encodedSignature] = request.signature.split(":");
+
+  if (!encodedPublicKey || !encodedSignature) {
+    return { ok: false, reason: "Aptos signature payload is invalid." };
+  }
+
+  let publicKey: Uint8Array;
+  let signature: Uint8Array;
+
+  try {
+    publicKey = hexToBytes(encodedPublicKey);
+    signature = hexToBytes(encodedSignature);
+  } catch {
+    return { ok: false, reason: "Aptos signature is invalid." };
+  }
+
+  if (aptosAddressFromPublicKey(publicKey) !== address) {
+    return { ok: false, reason: "Aptos public key does not match address." };
+  }
+
+  const valid = ed25519.verify(
+    signature,
+    new TextEncoder().encode(rawAptosSiwxMessage(message)),
+    publicKey
+  );
+
+  if (!valid) {
+    return { ok: false, reason: "Aptos signature is invalid." };
+  }
+
+  return { ok: true, subject: address };
+}
+
 export async function verifyEvmSiweMessage(
   request: VerificationRequest,
   options: EvmSiweVerificationOptions = {}
@@ -1360,6 +1528,14 @@ function encodeJson(value: Readonly<Record<string, unknown>>): string {
 function normalizeAddress(address: string, chainType?: ChainType): string {
   if (chainType === "solana") {
     return normalizeSolanaAddress(address);
+  }
+
+  if (chainType === "bitcoin") {
+    return normalizeBitcoinAddress(address);
+  }
+
+  if (chainType === "aptos") {
+    return normalizeAptosAddress(address);
   }
 
   return address.toLowerCase();
@@ -1514,6 +1690,44 @@ function rawSolanaSiwsMessage(message: SiwxMessage): string {
   ].join("\n");
 }
 
+function rawBitcoinSiwxMessage(message: SiwxMessage): string {
+  if (message.raw) {
+    return message.raw;
+  }
+
+  return [
+    `${message.domain} wants you to sign in with your Bitcoin account:`,
+    normalizeBitcoinAddress(message.address, message.chainId),
+    ...(message.statement ? ["", message.statement] : []),
+    "",
+    `URI: ${message.uri}`,
+    "Version: 1",
+    `Chain ID: bitcoin:${message.chainId}`,
+    `Nonce: ${message.nonce}`,
+    `Issued At: ${message.issuedAt}`,
+    ...(message.expirationTime ? [`Expiration Time: ${message.expirationTime}`] : [])
+  ].join("\n");
+}
+
+function rawAptosSiwxMessage(message: SiwxMessage): string {
+  if (message.raw) {
+    return message.raw;
+  }
+
+  return [
+    `${message.domain} wants you to sign in with your Aptos account:`,
+    normalizeAptosAddress(message.address),
+    ...(message.statement ? ["", message.statement] : []),
+    "",
+    `URI: ${message.uri}`,
+    "Version: 1",
+    `Chain ID: aptos:${message.chainId}`,
+    `Nonce: ${message.nonce}`,
+    `Issued At: ${message.issuedAt}`,
+    ...(message.expirationTime ? [`Expiration Time: ${message.expirationTime}`] : [])
+  ].join("\n");
+}
+
 function normalizeSolanaAddress(address: string): string {
   const bytes = base58.decode(address);
 
@@ -1522,6 +1736,79 @@ function normalizeSolanaAddress(address: string): string {
   }
 
   return base58.encode(bytes);
+}
+
+function normalizeBitcoinAddress(address: string, chainId?: string): string {
+  const bytes = base58.decode(address);
+  const expected = chainId === undefined ? undefined : chainId === "mainnet" ? 0x00 : 0x6f;
+
+  if (bytes.length !== 25 || (expected !== undefined && bytes[0] !== expected)) {
+    throw new Error("Invalid Bitcoin P2PKH address.");
+  }
+
+  const payload = bytes.slice(0, -4);
+  const checksum = bytes.slice(-4);
+  const expectedChecksum = createHash("sha256")
+    .update(createHash("sha256").update(payload).digest())
+    .digest()
+    .slice(0, 4);
+
+  if (!equalBytes(checksum, expectedChecksum)) {
+    throw new Error("Invalid Bitcoin address checksum.");
+  }
+
+  return address;
+}
+
+function bitcoinP2pkhAddress(publicKey: Uint8Array, chainId: string): string {
+  const sha = createHash("sha256").update(publicKey).digest();
+  const hash160 = createHash("ripemd160").update(sha).digest();
+  const version = chainId === "mainnet" ? 0x00 : 0x6f;
+  const payload = Buffer.concat([Buffer.from([version]), hash160]);
+  const checksum = createHash("sha256")
+    .update(createHash("sha256").update(payload).digest())
+    .digest()
+    .slice(0, 4);
+
+  return base58.encode(Buffer.concat([payload, checksum]));
+}
+
+function normalizeAptosAddress(address: string): string {
+  const clean = address.startsWith("0x") ? address.slice(2) : address;
+
+  if (!/^[0-9a-fA-F]{1,64}$/.test(clean)) {
+    throw new Error("Invalid Aptos address.");
+  }
+
+  return `0x${clean.padStart(64, "0").toLowerCase()}`;
+}
+
+function aptosAddressFromPublicKey(publicKey: Uint8Array): string {
+  const digest = createHash("sha3-256")
+    .update(Buffer.concat([publicKey, Buffer.from([0])]))
+    .digest("hex");
+
+  return `0x${digest}`;
+}
+
+function hexToBytes(value: string): Uint8Array {
+  const clean = value.startsWith("0x") ? value.slice(2) : value;
+
+  if (!/^[0-9a-fA-F]+$/.test(clean) || clean.length % 2 !== 0) {
+    throw new Error("Invalid hex value.");
+  }
+
+  const bytes = new Uint8Array(clean.length / 2);
+
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(clean.slice(index * 2, index * 2 + 2), 16);
+  }
+
+  return bytes;
+}
+
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return left.length === right.length && left.every((byte, index) => byte === right[index]);
 }
 
 function assertNonceMatchesMessage(

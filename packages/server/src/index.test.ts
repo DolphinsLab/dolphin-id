@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
+
 import { ed25519 } from "@noble/curves/ed25519";
+import { secp256k1 } from "@noble/curves/secp256k1";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { base58 } from "@scure/base";
 import { privateKeyToAccount } from "viem/accounts";
@@ -16,6 +19,8 @@ import {
   decodeJwtPayload,
   issueJwtSession,
   registerFastifyAuthRoutes,
+  verifyAptosSiwxMessage,
+  verifyBitcoinSiwxMessage,
   verifyJwtSession,
   verifyEvmSiweMessage,
   verifySolanaSiwsMessage,
@@ -825,6 +830,136 @@ describe("verifySolanaSiwsMessage", () => {
   });
 });
 
+describe("verifyBitcoinSiwxMessage", () => {
+  const issuedAt = new Date("2026-01-01T00:00:00.000Z");
+
+  async function signIn(overrides: { readonly domain?: string; readonly signature?: string } = {}) {
+    const privateKey = secp256k1.utils.randomPrivateKey();
+    const publicKey = secp256k1.getPublicKey(privateKey, true);
+    const address = bitcoinP2pkhAddress(publicKey, "testnet");
+    const auth = createServerAuth({
+      jwtSecret: "secret",
+      verifySiwx: (request) =>
+        verifyBitcoinSiwxMessage(request, {
+          expectedDomain: "example.com",
+          expectedChainId: "testnet",
+          now: issuedAt
+        })
+    });
+    const nonce = await auth.issueNonce({
+      now: issuedAt,
+      domain: "example.com",
+      chainType: "bitcoin",
+      address
+    });
+    const raw = bitcoinRawMessage({
+      domain: overrides.domain ?? "example.com",
+      address,
+      chainId: "testnet",
+      nonce: nonce.nonce,
+      issuedAt,
+      expirationTime: new Date("2026-01-01T00:05:00.000Z")
+    });
+    const signature =
+      overrides.signature ??
+      `${base58.encode(publicKey)}:${base58.encode(
+        secp256k1.sign(createHash("sha256").update(raw).digest(), privateKey).toCompactRawBytes()
+      )}`;
+
+    return auth.verifySignIn({
+      now: issuedAt,
+      nonce: nonce.nonce,
+      signature,
+      message: {
+        format: "caip122",
+        chainType: "bitcoin",
+        domain: overrides.domain ?? "example.com",
+        address,
+        uri: "https://example.com/login",
+        version: "1",
+        chainId: "testnet",
+        nonce: nonce.nonce,
+        issuedAt: issuedAt.toISOString(),
+        expirationTime: "2026-01-01T00:05:00.000Z",
+        raw
+      }
+    });
+  }
+
+  it("accepts a valid Bitcoin SIWX sign-in", async () => {
+    await expect(signIn()).resolves.toMatchObject({ verification: { ok: true } });
+  });
+
+  it("rejects invalid Bitcoin signatures and wrong domains", async () => {
+    await expect(signIn({ signature: "invalid" })).rejects.toThrow("Bitcoin signature payload");
+    await expect(signIn({ domain: "evil.example" })).rejects.toThrow("Nonce domain mismatch");
+  });
+});
+
+describe("verifyAptosSiwxMessage", () => {
+  const issuedAt = new Date("2026-01-01T00:00:00.000Z");
+
+  async function signIn(overrides: { readonly domain?: string; readonly signature?: string } = {}) {
+    const privateKey = ed25519.utils.randomPrivateKey();
+    const publicKey = ed25519.getPublicKey(privateKey);
+    const address = aptosAddressFromPublicKey(publicKey);
+    const auth = createServerAuth({
+      jwtSecret: "secret",
+      verifySiwx: (request) =>
+        verifyAptosSiwxMessage(request, {
+          expectedDomain: "example.com",
+          expectedChainId: "testnet",
+          now: issuedAt
+        })
+    });
+    const nonce = await auth.issueNonce({
+      now: issuedAt,
+      domain: "example.com",
+      chainType: "aptos",
+      address
+    });
+    const raw = aptosRawMessage({
+      domain: overrides.domain ?? "example.com",
+      address,
+      chainId: "testnet",
+      nonce: nonce.nonce,
+      issuedAt,
+      expirationTime: new Date("2026-01-01T00:05:00.000Z")
+    });
+    const signature =
+      overrides.signature ??
+      `${bytesToHex(publicKey)}:${bytesToHex(ed25519.sign(new TextEncoder().encode(raw), privateKey))}`;
+
+    return auth.verifySignIn({
+      now: issuedAt,
+      nonce: nonce.nonce,
+      signature,
+      message: {
+        format: "caip122",
+        chainType: "aptos",
+        domain: overrides.domain ?? "example.com",
+        address,
+        uri: "https://example.com/login",
+        version: "1",
+        chainId: "testnet",
+        nonce: nonce.nonce,
+        issuedAt: issuedAt.toISOString(),
+        expirationTime: "2026-01-01T00:05:00.000Z",
+        raw
+      }
+    });
+  }
+
+  it("accepts a valid Aptos SIWX sign-in", async () => {
+    await expect(signIn()).resolves.toMatchObject({ verification: { ok: true } });
+  });
+
+  it("rejects invalid Aptos signatures and wrong domains", async () => {
+    await expect(signIn({ signature: "invalid" })).rejects.toThrow("Aptos signature payload");
+    await expect(signIn({ domain: "evil.example" })).rejects.toThrow("Nonce domain mismatch");
+  });
+});
+
 function createExpressResponse() {
   return {
     statusCode: 200,
@@ -865,4 +1000,69 @@ function solanaRawMessage(input: {
     `Issued At: ${input.issuedAt.toISOString()}`,
     `Expiration Time: ${input.expirationTime.toISOString()}`
   ].join("\n");
+}
+
+function bitcoinRawMessage(input: {
+  readonly domain: string;
+  readonly address: string;
+  readonly chainId: string;
+  readonly nonce: string;
+  readonly issuedAt: Date;
+  readonly expirationTime: Date;
+}): string {
+  return [
+    `${input.domain} wants you to sign in with your Bitcoin account:`,
+    input.address,
+    "",
+    "URI: https://example.com/login",
+    "Version: 1",
+    `Chain ID: bitcoin:${input.chainId}`,
+    `Nonce: ${input.nonce}`,
+    `Issued At: ${input.issuedAt.toISOString()}`,
+    `Expiration Time: ${input.expirationTime.toISOString()}`
+  ].join("\n");
+}
+
+function aptosRawMessage(input: {
+  readonly domain: string;
+  readonly address: string;
+  readonly chainId: string;
+  readonly nonce: string;
+  readonly issuedAt: Date;
+  readonly expirationTime: Date;
+}): string {
+  return [
+    `${input.domain} wants you to sign in with your Aptos account:`,
+    input.address,
+    "",
+    "URI: https://example.com/login",
+    "Version: 1",
+    `Chain ID: aptos:${input.chainId}`,
+    `Nonce: ${input.nonce}`,
+    `Issued At: ${input.issuedAt.toISOString()}`,
+    `Expiration Time: ${input.expirationTime.toISOString()}`
+  ].join("\n");
+}
+
+function bitcoinP2pkhAddress(publicKey: Uint8Array, network: "mainnet" | "testnet"): string {
+  const sha = createHash("sha256").update(publicKey).digest();
+  const hash160 = createHash("ripemd160").update(sha).digest();
+  const version = network === "mainnet" ? 0x00 : 0x6f;
+  const payload = Buffer.concat([Buffer.from([version]), hash160]);
+  const checksum = createHash("sha256")
+    .update(createHash("sha256").update(payload).digest())
+    .digest()
+    .slice(0, 4);
+
+  return base58.encode(Buffer.concat([payload, checksum]));
+}
+
+function aptosAddressFromPublicKey(publicKey: Uint8Array): string {
+  return `0x${createHash("sha3-256")
+    .update(Buffer.concat([publicKey, Buffer.from([0])]))
+    .digest("hex")}`;
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }

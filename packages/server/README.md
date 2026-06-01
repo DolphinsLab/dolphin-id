@@ -26,8 +26,9 @@ address-as-user lookup, and JWT session issuing.
   response objects.
 - `registerFastifyAuthRoutes` registers the reference auth routes on a
   Fastify-like instance.
-- `verifyEvmSiweMessage`, `verifySuiPersonalMessage`, and
-  `verifySolanaSiwsMessage` provide chain-specific SIWX signature verification
+- `verifyEvmSiweMessage`, `verifySuiPersonalMessage`,
+  `verifySolanaSiwsMessage`, `verifyBitcoinSiwxMessage`, and
+  `verifyAptosSiwxMessage` provide chain-specific SIWX signature verification
   helpers.
 
 Production apps should provide a chain-specific `verifySiwx` implementation from
@@ -70,6 +71,16 @@ It validates chain type, domain, address, chain ID, nonce, expiration, and the
 Use `verifySolanaSiwsMessage` as the `verifySiwx` implementation for Solana
 sign-in. It validates chain type, domain, base58 address ownership, chain
 identifier, nonce, expiration, and the Ed25519 signature over the SIWS message.
+
+## Bitcoin And Aptos Verification
+
+Use `verifyBitcoinSiwxMessage` for the documented v1 Bitcoin P2PKH path. It
+validates chain type, domain, P2PKH address ownership, chain identifier, nonce,
+expiration, and a secp256k1 signature over the SIWX message.
+
+Use `verifyAptosSiwxMessage` for Aptos sign-in. It derives the account address
+from the Ed25519 public key in the signature payload, then verifies the SIWX
+message signature.
 
 ## Express And Fastify Helpers
 

@@ -11,6 +11,8 @@ repository is organized as a pnpm workspace with scoped packages under
 | `packages/core`                | `@dolphin-id/core`                        | Core chain, wallet, account, SIWX, and adapter contracts |
 | `packages/react`               | `@dolphin-id/react`                       | React provider and headless hooks                        |
 | `packages/ui`                  | `@dolphin-id/ui`                          | Default wallet connection UI components                  |
+| `packages/adapter-aptos`       | `@dolphin-id/adapter-aptos`               | Aptos wallet adapter package                             |
+| `packages/adapter-bitcoin`     | `@dolphin-id/adapter-bitcoin`             | Bitcoin wallet adapter package                           |
 | `packages/adapter-evm`         | `@dolphin-id/adapter-evm`                 | EVM wallet adapter package                               |
 | `packages/adapter-sui`         | `@dolphin-id/adapter-sui`                 | Sui wallet adapter package                               |
 | `packages/adapter-solana`      | `@dolphin-id/adapter-solana`              | Solana wallet adapter package                            |
@@ -38,8 +40,9 @@ connection requests, signing requests, and adapter events. It must not import
 EVM, Sui, Solana, wallet, React, server, or UI SDKs.
 
 Chain-specific packages such as `@dolphin-id/adapter-evm`,
-`@dolphin-id/adapter-sui`, and `@dolphin-id/adapter-solana` implement the core
-contracts. Address normalization is an adapter responsibility through
+`@dolphin-id/adapter-sui`, `@dolphin-id/adapter-solana`,
+`@dolphin-id/adapter-bitcoin`, and `@dolphin-id/adapter-aptos` implement the
+core contracts. Address normalization is an adapter responsibility through
 `normalizeAddress`, because each chain owns its own address format and display
 rules.
 
@@ -70,6 +73,9 @@ and server-side personal-message signature verification.
 The Solana slice includes Wallet Standard-style discovery, connection and
 account events, SIWS payload construction, Solana address normalization, message
 signing, and server-side Ed25519 signature verification.
+
+The Bitcoin and Aptos slices add P2PKH Bitcoin and Ed25519 Aptos SIWX flows,
+chain-specific adapters, server verification helpers, and example wiring.
 
 The React slice provides a headless `DolphinProvider`, wallet/account/session
 hooks, endpoint-backed auth client configuration, and UI-free EVM/Sui SIWX

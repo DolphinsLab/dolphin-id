@@ -9,6 +9,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@dolphin-id/adapter-aptos": "workspace:*",
+    "@dolphin-id/adapter-bitcoin": "workspace:*",
     "@dolphin-id/adapter-evm": "workspace:*",
     "@dolphin-id/adapter-solana": "workspace:*",
     "@dolphin-id/adapter-sui": "workspace:*"

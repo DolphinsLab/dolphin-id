@@ -65,6 +65,12 @@ importers:
 
   examples/basic:
     dependencies:
+      "@dolphin-id/adapter-aptos":
+        specifier: workspace:*
+        version: link:../../packages/adapter-aptos
+      "@dolphin-id/adapter-bitcoin":
+        specifier: workspace:*
+        version: link:../../packages/adapter-bitcoin
       "@dolphin-id/adapter-evm":
         specifier: workspace:*
         version: link:../../packages/adapter-evm
@@ -117,6 +123,29 @@ importers:
       viem:
         specifier: ^2.51.3
         version: 2.51.3(typescript@5.9.3)
+
+  packages/adapter-aptos:
+    dependencies:
+      "@dolphin-id/core":
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      "@noble/curves":
+        specifier: ^1.9.1
+        version: 1.9.1
+
+  packages/adapter-bitcoin:
+    dependencies:
+      "@dolphin-id/core":
+        specifier: workspace:*
+        version: link:../core
+      "@scure/base":
+        specifier: ^1.2.6
+        version: 1.2.6
+    devDependencies:
+      "@noble/curves":
+        specifier: ^1.9.1
+        version: 1.9.1
 
   packages/adapter-solana:
     dependencies:
