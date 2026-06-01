@@ -14,6 +14,7 @@ repository is organized as a pnpm workspace with scoped packages under
 | `packages/adapter-evm` | `@dolphin-id/adapter-evm`   | EVM wallet adapter package                               |
 | `packages/adapter-sui` | `@dolphin-id/adapter-sui`   | Sui wallet adapter package                               |
 | `packages/server`      | `@dolphin-id/server`        | Node.js auth, nonce, verification, and session utilities |
+| `packages/cli`         | `@dolphin-id/cli`           | App scaffolder for runnable Next.js integrations         |
 | `examples/basic`       | `@dolphin-id/example-basic` | Minimal integration playground                           |
 | `examples/next`        | `@dolphin-id/example-next`  | Next.js EVM/Sui login and E2E verification               |
 
@@ -21,6 +22,7 @@ repository is organized as a pnpm workspace with scoped packages under
 
 - [Getting started](docs/getting-started.md)
 - [MVP API reference](docs/api-reference.md)
+- [CLI scaffolder](docs/cli.md)
 - [Security guide](docs/security.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
@@ -43,6 +45,10 @@ for nonce, verification, and session flows.
 `@dolphin-id/server` exposes the self-hosted auth core: nonce issue/consume,
 in-memory and Redis nonce stores, address-as-user repositories, SIWX verification
 orchestration, and configurable seven-day-by-default JWT sessions.
+
+`@dolphin-id/cli` scaffolds runnable Next.js apps with selectable EVM/Sui chains,
+default UI or headless hooks, self-hosted or hosted auth, and cookie or
+memory-only session storage.
 
 Errors, events, and React-facing state also live in `@dolphin-id/core` so
 adapters, hooks, UI, and server calls report failures and lifecycle transitions
