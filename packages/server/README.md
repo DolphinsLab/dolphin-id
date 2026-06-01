@@ -17,3 +17,9 @@ address-as-user lookup, and JWT session issuing.
 Production apps should provide a chain-specific `verifySiwx` implementation from
 the relevant adapter slice. The default verifier only rejects missing signatures
 and exists so the auth orchestration can be tested independently.
+
+## EVM SIWE Verification
+
+Use `verifyEvmSiweMessage` as the `verifySiwx` implementation for EVM sign-in.
+It validates chain type, domain, address, chain ID, nonce, expiration, and the
+`personal_sign` signature over the SIWE message.

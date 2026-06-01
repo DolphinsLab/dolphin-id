@@ -7,8 +7,10 @@ import {
   createServerAuth,
   decodeJwtPayload,
   issueJwtSession,
+  verifyEvmSiweMessage,
   type RedisNonceClient
 } from "./index";
+import { privateKeyToAccount } from "viem/accounts";
 
 describe("nonce stores", () => {
   it("rejects expired nonce consumption", async () => {
@@ -133,5 +135,122 @@ describe("createServerAuth", () => {
       chainId: "1",
       address: "0xabc"
     });
+  });
+});
+
+describe("verifyEvmSiweMessage", () => {
+  const privateKey = "0x59c6995e998f97a5a0044966f0945386dca83d9b3b064b12e519d2de9d2c5f0d";
+  const account = privateKeyToAccount(privateKey);
+  const issuedAt = new Date("2026-01-01T00:00:00.000Z");
+
+  async function signIn(
+    overrides: {
+      readonly domain?: string;
+      readonly nonceNow?: Date;
+      readonly signature?: string;
+      readonly expirationTime?: Date;
+    } = {}
+  ) {
+    const auth = createServerAuth({
+      jwtSecret: "secret",
+      verifySiwx: (request) =>
+        verifyEvmSiweMessage(request, {
+          expectedDomain: "example.com",
+          expectedChainId: 1,
+          now: issuedAt
+        })
+    });
+    const nonce = await auth.issueNonce({
+      now: overrides.nonceNow ?? issuedAt,
+      domain: "example.com",
+      chainType: "evm",
+      address: account.address
+    });
+    const message = {
+      format: "eip4361",
+      chainType: "evm",
+      domain: overrides.domain ?? "example.com",
+      address: account.address,
+      uri: "https://example.com/login",
+      version: "1",
+      chainId: "1",
+      nonce: nonce.nonce,
+      issuedAt: issuedAt.toISOString(),
+      expirationTime: (
+        overrides.expirationTime ?? new Date("2026-01-01T00:05:00.000Z")
+      ).toISOString(),
+      raw: `${overrides.domain ?? "example.com"} wants you to sign in with your Ethereum account:\n${account.address}\n\nURI: https://example.com/login\nVersion: 1\nChain ID: 1\nNonce: ${nonce.nonce}\nIssued At: ${issuedAt.toISOString()}\nExpiration Time: ${(overrides.expirationTime ?? new Date("2026-01-01T00:05:00.000Z")).toISOString()}`
+    } as const;
+    const signature =
+      overrides.signature ??
+      (await account.signMessage({
+        message: message.raw
+      }));
+
+    return auth.verifySignIn({
+      now: issuedAt,
+      nonce: nonce.nonce,
+      signature,
+      message
+    });
+  }
+
+  it("accepts a valid EVM SIWE sign-in", async () => {
+    await expect(signIn()).resolves.toMatchObject({
+      user: { id: `evm:1:${account.address.toLowerCase()}` },
+      verification: { ok: true, subject: account.address }
+    });
+  });
+
+  it("rejects an invalid signature", async () => {
+    await expect(signIn({ signature: "0xdeadbeef" })).rejects.toThrow("SIWE signature is invalid");
+  });
+
+  it("rejects the wrong domain", async () => {
+    await expect(signIn({ domain: "evil.example" })).rejects.toThrow("Nonce domain mismatch");
+  });
+
+  it("rejects expired nonce before verifying the signature", async () => {
+    await expect(signIn({ nonceNow: new Date("2025-12-31T23:00:00.000Z") })).rejects.toThrow(
+      "Nonce expired"
+    );
+  });
+
+  it("rejects replayed nonce", async () => {
+    const auth = createServerAuth({
+      jwtSecret: "secret",
+      verifySiwx: (request) => verifyEvmSiweMessage(request, { now: issuedAt })
+    });
+    const nonce = await auth.issueNonce({
+      now: issuedAt,
+      domain: "example.com",
+      chainType: "evm",
+      address: account.address
+    });
+    const message = {
+      format: "eip4361",
+      chainType: "evm",
+      domain: "example.com",
+      address: account.address,
+      uri: "https://example.com/login",
+      version: "1",
+      chainId: "1",
+      nonce: nonce.nonce,
+      issuedAt: issuedAt.toISOString(),
+      expirationTime: "2026-01-01T00:05:00.000Z",
+      raw: `example.com wants you to sign in with your Ethereum account:\n${account.address}\n\nURI: https://example.com/login\nVersion: 1\nChain ID: 1\nNonce: ${nonce.nonce}\nIssued At: ${issuedAt.toISOString()}\nExpiration Time: 2026-01-01T00:05:00.000Z`
+    } as const;
+    const signature = await account.signMessage({ message: message.raw });
+    const request = {
+      now: issuedAt,
+      nonce: nonce.nonce,
+      signature,
+      message
+    };
+
+    await expect(auth.verifySignIn(request)).resolves.toMatchObject({
+      verification: { ok: true }
+    });
+    await expect(auth.verifySignIn(request)).rejects.toThrow("Nonce not_found");
   });
 });
