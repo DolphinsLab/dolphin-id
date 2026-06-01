@@ -1,3 +1,5 @@
+import { createAptosAdapter } from "@dolphin-id/adapter-aptos";
+import { createBitcoinAdapter } from "@dolphin-id/adapter-bitcoin";
 import { createEvmAdapter } from "@dolphin-id/adapter-evm";
 import { createSolanaAdapter } from "@dolphin-id/adapter-solana";
 import { createSuiAdapter } from "@dolphin-id/adapter-sui";
@@ -5,5 +7,7 @@ import { createSuiAdapter } from "@dolphin-id/adapter-sui";
 export const adapters = [
   createEvmAdapter({ chainId: 1, chainName: "Ethereum" }),
   createSuiAdapter({ network: "testnet" }),
-  createSolanaAdapter({ network: "devnet" })
+  createSolanaAdapter({ network: "devnet" }),
+  createBitcoinAdapter({ network: "testnet" }),
+  createAptosAdapter({ network: "testnet" })
 ];

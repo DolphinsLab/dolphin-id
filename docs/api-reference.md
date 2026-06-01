@@ -69,6 +69,9 @@ hooks.
 - `verifySuiPersonalMessage`: verifies Sui personal-message signatures.
 - `verifySolanaSiwsMessage`: verifies Solana SIWS messages and Ed25519
   signatures against the base58 account public key.
+- `verifyBitcoinSiwxMessage`: verifies the documented Bitcoin P2PKH SIWX
+  signature payload.
+- `verifyAptosSiwxMessage`: verifies Aptos SIWX messages and Ed25519 signatures.
 - `createAuthRouteHandlers`: framework-neutral nonce, verify, refresh, me,
   logout, and require-session handlers.
 - `createExpressAuthRoutes`: Express-like route handlers for the auth flow.
@@ -86,6 +89,10 @@ hooks.
   personal-message construction/signing, and Sui address normalization.
 - `@dolphin-id/adapter-solana`: Wallet Standard-style discovery and connection,
   Solana SIWS construction/signing, and base58 address normalization.
+- `@dolphin-id/adapter-bitcoin`: Wallet Standard-style discovery and connection,
+  Bitcoin SIWX construction/signing, and P2PKH address normalization.
+- `@dolphin-id/adapter-aptos`: Wallet Standard-style discovery and connection,
+  Aptos SIWX construction/signing, and Aptos address normalization.
 
 ## Third-party Adapters
 
