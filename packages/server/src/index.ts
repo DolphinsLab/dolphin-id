@@ -1,6 +1,8 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 import type { ChainType, SiwxMessage } from "@dolphin-id/core";
+import { getAddress, verifyMessage, type Address, type Hex } from "viem";
+import { createSiweMessage } from "viem/siwe";
 
 const DEFAULT_NONCE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -282,6 +284,13 @@ export interface VerificationResult {
 
 export type SiwxVerifier = (request: VerificationRequest) => Promise<VerificationResult>;
 
+export interface EvmSiweVerificationOptions {
+  readonly expectedDomain?: string;
+  readonly expectedAddress?: string;
+  readonly expectedChainId?: string | number;
+  readonly now?: Date;
+}
+
 export interface VerifySignInRequest {
   readonly message: SiwxMessage;
   readonly signature: string;
@@ -412,6 +421,68 @@ export async function verifySiwxPlaceholder(
   return { ok: true, subject: request.message.address };
 }
 
+export async function verifyEvmSiweMessage(
+  request: VerificationRequest,
+  options: EvmSiweVerificationOptions = {}
+): Promise<VerificationResult> {
+  const message = request.message;
+
+  if (message.chainType !== "evm") {
+    return { ok: false, reason: "SIWE message chain type must be evm." };
+  }
+
+  if (message.nonce !== request.nonce) {
+    return { ok: false, reason: "SIWE nonce mismatch." };
+  }
+
+  if (options.expectedDomain && message.domain !== options.expectedDomain) {
+    return { ok: false, reason: "SIWE domain mismatch." };
+  }
+
+  if (options.expectedChainId && message.chainId !== String(options.expectedChainId)) {
+    return { ok: false, reason: "SIWE chainId mismatch." };
+  }
+
+  let address: Address;
+
+  try {
+    address = getAddress(message.address);
+  } catch {
+    return { ok: false, reason: "SIWE address is invalid." };
+  }
+
+  if (options.expectedAddress && address !== getAddress(options.expectedAddress)) {
+    return { ok: false, reason: "SIWE address mismatch." };
+  }
+
+  if (!message.expirationTime) {
+    return { ok: false, reason: "SIWE expirationTime is required." };
+  }
+
+  if (new Date(message.expirationTime).getTime() <= (options.now ?? new Date()).getTime()) {
+    return { ok: false, reason: "SIWE message expired." };
+  }
+
+  const raw = rawEvmSiweMessage(message);
+  let valid: boolean;
+
+  try {
+    valid = await verifyMessage({
+      address,
+      message: raw,
+      signature: request.signature as Hex
+    });
+  } catch {
+    return { ok: false, reason: "SIWE signature is invalid." };
+  }
+
+  if (!valid) {
+    return { ok: false, reason: "SIWE signature is invalid." };
+  }
+
+  return { ok: true, subject: address };
+}
+
 export function decodeJwtPayload(token: string): Readonly<Record<string, unknown>> {
   const [, payload] = token.split(".");
 
@@ -478,6 +549,27 @@ function accountFromSiwxMessage(message: SiwxMessage): UserAccount {
     chainId: message.chainId,
     address: normalizeAddress(message.address)
   };
+}
+
+function rawEvmSiweMessage(message: SiwxMessage): string {
+  if (message.raw) {
+    return message.raw;
+  }
+
+  return createSiweMessage({
+    address: getAddress(message.address),
+    chainId: Number(message.chainId),
+    domain: message.domain,
+    uri: message.uri,
+    version: "1",
+    nonce: message.nonce,
+    issuedAt: new Date(message.issuedAt),
+    expirationTime: message.expirationTime ? new Date(message.expirationTime) : undefined,
+    ...(message.statement ? { statement: message.statement } : {}),
+    ...(message.notBefore ? { notBefore: new Date(message.notBefore) } : {}),
+    ...(message.requestId ? { requestId: message.requestId } : {}),
+    ...(message.resources ? { resources: [...message.resources] } : {})
+  });
 }
 
 function assertNonceMatchesMessage(record: NonceRecord, message: SiwxMessage): void {

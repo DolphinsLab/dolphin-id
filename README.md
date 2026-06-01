@@ -36,6 +36,10 @@ for nonce, verification, and session flows.
 in-memory and Redis nonce stores, address-as-user repositories, SIWX verification
 orchestration, and configurable seven-day-by-default JWT sessions.
 
+The EVM slice includes EIP-6963 injected wallet discovery, EIP-1193 connection
+and event handling, EIP-4361 SIWE message creation, `personal_sign` signing, and
+server-side SIWE signature verification.
+
 ## Local Development
 
 Install dependencies:
