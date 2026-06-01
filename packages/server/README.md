@@ -7,15 +7,17 @@ address-as-user lookup, and JWT session issuing.
 ## Public APIs
 
 - `createServerAuth` creates an auth service with `issueNonce`, `consumeNonce`,
-  `verifySignIn`, `issueSession`, `refreshSession`, `verifySession`,
-  `revokeRefreshToken`, and `invalidateSessions`.
+  `verifySignIn`, `bindAccount`, `unbindAccount`, `setPrimaryAccount`,
+  `authorizeSensitiveOperation`, `issueSession`, `refreshSession`,
+  `verifySession`, `revokeRefreshToken`, and `invalidateSessions`.
 - `InMemoryNonceStore` is the development nonce store.
 - `RedisNonceStore` adapts Redis-like clients with `get`, `set`, and `del`.
 - `InMemoryRefreshTokenStore` stores rotating refresh tokens for local
   development and tests.
 - `InMemorySessionInvalidationStore` tracks per-subject session versions for
   forced logout.
-- `InMemoryUserRepository` supports address-as-user lookup and creation.
+- `InMemoryUserRepository` supports identity lookup, address uniqueness,
+  wallet binding/unbinding, and primary account selection.
 - `issueJwtSession` issues HS256 JWT sessions. The default expiration is seven
   days and can be overridden with `sessionTtlSeconds` or `expiresInSeconds`.
 - `verifyJwtSession` verifies HS256 session JWTs and rejects tampered or expired
@@ -39,6 +41,11 @@ and exists so the auth orchestration can be tested independently.
 
 - `verifySignIn` requires each sign-in nonce to be issued with a domain and
   rejects messages whose domain differs from the nonce domain.
+- `bindAccount` requires a `bind-account` nonce and successful SIWX ownership
+  verification before adding a wallet to an identity.
+- `authorizeSensitiveOperation` defaults to the any-bound-wallet policy: any
+  account already bound to the identity may reauthenticate with a
+  `reauthenticate` nonce.
 - `createServerAuth` rejects short or obvious JWT secrets when
   `runtimeEnvironment` is `production`, unless `allowWeakJwtSecret` is explicitly
   set for a reviewed exception.

@@ -404,6 +404,233 @@ describe("createServerAuth", () => {
       })
     ).rejects.toThrow("Nonce domain is required");
   });
+
+  it("binds, unbinds, and selects primary accounts for one identity", async () => {
+    const auth = createServerAuth({
+      jwtSecret: "secret",
+      userRepository: new InMemoryUserRepository(),
+      verifySiwx: async ({ signature, message }) =>
+        signature === "valid"
+          ? { ok: true, subject: message.address }
+          : { ok: false, reason: "Mock signature invalid." }
+    });
+    const issuedAt = new Date("2026-01-01T00:00:00.000Z");
+    const firstNonce = await auth.issueNonce({
+      now: issuedAt,
+      domain: "example.com",
+      chainType: "evm",
+      address: "0xABC"
+    });
+    const signedIn = await auth.verifySignIn({
+      now: issuedAt,
+      nonce: firstNonce.nonce,
+      signature: "valid",
+      message: signInMessage({
+        chainType: "evm",
+        chainId: "1",
+        address: "0xABC",
+        nonce: firstNonce.nonce,
+        issuedAt
+      })
+    });
+    const bindNonce = await auth.issueNonce({
+      now: issuedAt,
+      purpose: "bind-account",
+      domain: "example.com",
+      chainType: "sui",
+      address: "0xDEF"
+    });
+    const bound = await auth.bindAccount({
+      now: issuedAt,
+      identityId: signedIn.identity.id,
+      nonce: bindNonce.nonce,
+      signature: "valid",
+      message: signInMessage({
+        chainType: "sui",
+        chainId: "testnet",
+        address: "0xDEF",
+        nonce: bindNonce.nonce,
+        issuedAt,
+        purpose: "bind-account"
+      })
+    });
+
+    expect(bound.identity.accounts).toEqual([
+      { chainType: "evm", chainId: "1", address: "0xabc" },
+      { chainType: "sui", chainId: "testnet", address: "0xdef" }
+    ]);
+
+    const primary = await auth.setPrimaryAccount({
+      now: issuedAt,
+      identityId: signedIn.identity.id,
+      account: { chainType: "sui", chainId: "testnet", address: "0xDEF" }
+    });
+    expect(primary.primaryAccount).toEqual({
+      chainType: "sui",
+      chainId: "testnet",
+      address: "0xdef"
+    });
+
+    const unbound = await auth.unbindAccount({
+      now: issuedAt,
+      identityId: signedIn.identity.id,
+      account: { chainType: "evm", chainId: "1", address: "0xABC" }
+    });
+    expect(unbound.accounts).toEqual([{ chainType: "sui", chainId: "testnet", address: "0xdef" }]);
+    await expect(
+      auth.unbindAccount({
+        now: issuedAt,
+        identityId: signedIn.identity.id,
+        account: { chainType: "sui", chainId: "testnet", address: "0xDEF" }
+      })
+    ).rejects.toThrow("final account");
+  });
+
+  it("requires ownership verification and unique accounts during binding", async () => {
+    const repository = new InMemoryUserRepository();
+    const auth = createServerAuth({
+      jwtSecret: "secret",
+      userRepository: repository,
+      verifySiwx: async ({ signature, message }) =>
+        signature === "valid"
+          ? { ok: true, subject: message.address }
+          : { ok: false, reason: "Mock signature invalid." }
+    });
+    const issuedAt = new Date("2026-01-01T00:00:00.000Z");
+    const first = await createSignedInIdentity(auth, "0x111", issuedAt);
+    const second = await createSignedInIdentity(auth, "0x222", issuedAt);
+    const failedNonce = await auth.issueNonce({
+      now: issuedAt,
+      purpose: "bind-account",
+      domain: "example.com",
+      chainType: "evm",
+      address: "0x333"
+    });
+
+    await expect(
+      auth.bindAccount({
+        now: issuedAt,
+        identityId: first.identity.id,
+        nonce: failedNonce.nonce,
+        signature: "invalid",
+        message: signInMessage({
+          chainType: "evm",
+          chainId: "1",
+          address: "0x333",
+          nonce: failedNonce.nonce,
+          issuedAt,
+          purpose: "bind-account"
+        })
+      })
+    ).rejects.toThrow("Mock signature invalid");
+
+    const bindNonce = await auth.issueNonce({
+      now: issuedAt,
+      purpose: "bind-account",
+      domain: "example.com",
+      chainType: "evm",
+      address: "0x333"
+    });
+    await auth.bindAccount({
+      now: issuedAt,
+      identityId: first.identity.id,
+      nonce: bindNonce.nonce,
+      signature: "valid",
+      message: signInMessage({
+        chainType: "evm",
+        chainId: "1",
+        address: "0x333",
+        nonce: bindNonce.nonce,
+        issuedAt,
+        purpose: "bind-account"
+      })
+    });
+
+    const duplicateNonce = await auth.issueNonce({
+      now: issuedAt,
+      purpose: "bind-account",
+      domain: "example.com",
+      chainType: "evm",
+      address: "0x333"
+    });
+    await expect(
+      auth.bindAccount({
+        now: issuedAt,
+        identityId: second.identity.id,
+        nonce: duplicateNonce.nonce,
+        signature: "valid",
+        message: signInMessage({
+          chainType: "evm",
+          chainId: "1",
+          address: "0x333",
+          nonce: duplicateNonce.nonce,
+          issuedAt,
+          purpose: "bind-account"
+        })
+      })
+    ).rejects.toThrow("already bound");
+  });
+
+  it("authorizes sensitive operations with any bound wallet by default", async () => {
+    const auth = createServerAuth({
+      jwtSecret: "secret",
+      userRepository: new InMemoryUserRepository(),
+      verifySiwx: async ({ signature, message }) =>
+        signature === "valid"
+          ? { ok: true, subject: message.address }
+          : { ok: false, reason: "Mock signature invalid." }
+    });
+    const issuedAt = new Date("2026-01-01T00:00:00.000Z");
+    const signedIn = await createSignedInIdentity(auth, "0x111", issuedAt);
+    const bindNonce = await auth.issueNonce({
+      now: issuedAt,
+      purpose: "bind-account",
+      domain: "example.com",
+      chainType: "evm",
+      address: "0x222"
+    });
+    await auth.bindAccount({
+      now: issuedAt,
+      identityId: signedIn.identity.id,
+      nonce: bindNonce.nonce,
+      signature: "valid",
+      message: signInMessage({
+        chainType: "evm",
+        chainId: "1",
+        address: "0x222",
+        nonce: bindNonce.nonce,
+        issuedAt,
+        purpose: "bind-account"
+      })
+    });
+    const reauthNonce = await auth.issueNonce({
+      now: issuedAt,
+      purpose: "reauthenticate",
+      domain: "example.com",
+      chainType: "evm",
+      address: "0x222"
+    });
+
+    await expect(
+      auth.authorizeSensitiveOperation({
+        now: issuedAt,
+        identityId: signedIn.identity.id,
+        nonce: reauthNonce.nonce,
+        signature: "valid",
+        message: signInMessage({
+          chainType: "evm",
+          chainId: "1",
+          address: "0x222",
+          nonce: reauthNonce.nonce,
+          issuedAt,
+          purpose: "reauthenticate"
+        })
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      account: { chainType: "evm", chainId: "1", address: "0x222" }
+    });
+  });
 });
 
 describe("security controls", () => {
@@ -979,6 +1206,55 @@ function createExpressResponse() {
       this.cookies.push({ name, value: "", options });
     }
   };
+}
+
+async function createSignedInIdentity(
+  auth: ReturnType<typeof createServerAuth>,
+  address: string,
+  issuedAt: Date
+) {
+  const nonce = await auth.issueNonce({
+    now: issuedAt,
+    domain: "example.com",
+    chainType: "evm",
+    address
+  });
+
+  return auth.verifySignIn({
+    now: issuedAt,
+    nonce: nonce.nonce,
+    signature: "valid",
+    message: signInMessage({
+      chainType: "evm",
+      chainId: "1",
+      address,
+      nonce: nonce.nonce,
+      issuedAt
+    })
+  });
+}
+
+function signInMessage(input: {
+  readonly chainType: string;
+  readonly chainId: string;
+  readonly address: string;
+  readonly nonce: string;
+  readonly issuedAt: Date;
+  readonly purpose?: string;
+}) {
+  return {
+    format: "caip122",
+    chainType: input.chainType,
+    domain: "example.com",
+    address: input.address,
+    uri: "https://example.com/login",
+    version: "1",
+    chainId: input.chainId,
+    nonce: input.nonce,
+    issuedAt: input.issuedAt.toISOString(),
+    expirationTime: "2026-01-01T00:05:00.000Z",
+    ...(input.purpose ? { purpose: input.purpose } : {})
+  } as const;
 }
 
 function solanaRawMessage(input: {

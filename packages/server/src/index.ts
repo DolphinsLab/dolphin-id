@@ -193,19 +193,42 @@ export interface UserAccount {
 export interface User {
   readonly id: string;
   readonly accounts: readonly UserAccount[];
+  readonly primaryAccount?: UserAccount;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
 
+export type Identity = User;
+
 export interface UserRepository {
+  findById(id: string): Promise<User | null>;
   findByAccount(account: UserAccount): Promise<User | null>;
   createFromAccount(account: UserAccount, options?: { readonly now?: Date }): Promise<User>;
   findOrCreateByAccount(account: UserAccount, options?: { readonly now?: Date }): Promise<User>;
+  bindAccount(
+    userId: string,
+    account: UserAccount,
+    options?: { readonly now?: Date }
+  ): Promise<User>;
+  unbindAccount(
+    userId: string,
+    account: UserAccount,
+    options?: { readonly now?: Date }
+  ): Promise<User>;
+  setPrimaryAccount(
+    userId: string,
+    account: UserAccount,
+    options?: { readonly now?: Date }
+  ): Promise<User>;
 }
 
 export class InMemoryUserRepository implements UserRepository {
   readonly #users = new Map<string, User>();
   readonly #accountIndex = new Map<string, string>();
+
+  async findById(id: string): Promise<User | null> {
+    return this.#users.get(id) ?? null;
+  }
 
   async findByAccount(account: UserAccount): Promise<User | null> {
     const userId = this.#accountIndex.get(userAccountKey(account));
@@ -222,16 +245,18 @@ export class InMemoryUserRepository implements UserRepository {
     options: { readonly now?: Date } = {}
   ): Promise<User> {
     const now = options.now ?? new Date();
-    const id = userAccountKey(account);
+    const normalizedAccount = normalizeUserAccount(account);
+    const id = userAccountKey(normalizedAccount);
     const user: User = {
       id,
-      accounts: [account],
+      accounts: [normalizedAccount],
+      primaryAccount: normalizedAccount,
       createdAt: now,
       updatedAt: now
     };
 
     this.#users.set(id, user);
-    this.#accountIndex.set(userAccountKey(account), id);
+    this.#accountIndex.set(userAccountKey(normalizedAccount), id);
     return user;
   }
 
@@ -240,6 +265,112 @@ export class InMemoryUserRepository implements UserRepository {
     options: { readonly now?: Date } = {}
   ): Promise<User> {
     return (await this.findByAccount(account)) ?? this.createFromAccount(account, options);
+  }
+
+  async bindAccount(
+    userId: string,
+    account: UserAccount,
+    options: { readonly now?: Date } = {}
+  ): Promise<User> {
+    const user = this.#users.get(userId);
+
+    if (!user) {
+      throw new Error("Identity not found.");
+    }
+
+    const normalizedAccount = normalizeUserAccount(account);
+    const accountKey = userAccountKey(normalizedAccount);
+    const existingUserId = this.#accountIndex.get(accountKey);
+
+    if (existingUserId && existingUserId !== user.id) {
+      throw new Error("Account is already bound to another identity.");
+    }
+
+    if (existingUserId === user.id) {
+      return user;
+    }
+
+    const now = options.now ?? new Date();
+    const updated: User = {
+      ...user,
+      accounts: [...user.accounts, normalizedAccount],
+      primaryAccount: user.primaryAccount ?? user.accounts[0] ?? normalizedAccount,
+      updatedAt: now
+    };
+
+    this.#users.set(user.id, updated);
+    this.#accountIndex.set(accountKey, user.id);
+    return updated;
+  }
+
+  async unbindAccount(
+    userId: string,
+    account: UserAccount,
+    options: { readonly now?: Date } = {}
+  ): Promise<User> {
+    const user = this.#users.get(userId);
+
+    if (!user) {
+      throw new Error("Identity not found.");
+    }
+
+    const normalizedAccount = normalizeUserAccount(account);
+    const accountKey = userAccountKey(normalizedAccount);
+
+    if (!user.accounts.some((candidate) => userAccountKey(candidate) === accountKey)) {
+      throw new Error("Account is not bound to this identity.");
+    }
+
+    if (user.accounts.length <= 1) {
+      throw new Error("Cannot unbind the final account from an identity.");
+    }
+
+    const accounts = user.accounts.filter((candidate) => userAccountKey(candidate) !== accountKey);
+    const primaryAccount =
+      user.primaryAccount && userAccountKey(user.primaryAccount) !== accountKey
+        ? user.primaryAccount
+        : accounts[0];
+    const updated: User = {
+      ...user,
+      accounts,
+      ...(primaryAccount ? { primaryAccount } : {}),
+      updatedAt: options.now ?? new Date()
+    };
+
+    this.#users.set(user.id, updated);
+    this.#accountIndex.delete(userAccountKey(normalizedAccount));
+    return updated;
+  }
+
+  async setPrimaryAccount(
+    userId: string,
+    account: UserAccount,
+    options: { readonly now?: Date } = {}
+  ): Promise<User> {
+    const user = this.#users.get(userId);
+
+    if (!user) {
+      throw new Error("Identity not found.");
+    }
+
+    const normalizedAccount = normalizeUserAccount(account);
+    const accountKey = userAccountKey(normalizedAccount);
+    const primaryAccount = user.accounts.find(
+      (candidate) => userAccountKey(candidate) === accountKey
+    );
+
+    if (!primaryAccount) {
+      throw new Error("Primary account must be bound to this identity.");
+    }
+
+    const updated: User = {
+      ...user,
+      primaryAccount,
+      updatedAt: options.now ?? new Date()
+    };
+
+    this.#users.set(user.id, updated);
+    return updated;
   }
 }
 
@@ -529,9 +660,51 @@ export interface VerifySignInRequest {
 
 export interface VerifySignInResult {
   readonly user: User;
+  readonly identity: Identity;
   readonly session: JwtSession;
   readonly refreshToken: RefreshToken;
   readonly verification: VerificationResult;
+}
+
+export interface BindAccountRequest {
+  readonly identityId: string;
+  readonly message: SiwxMessage;
+  readonly signature: string;
+  readonly nonce: string;
+  readonly now?: Date;
+}
+
+export interface BindAccountResult {
+  readonly identity: Identity;
+  readonly account: UserAccount;
+  readonly verification: VerificationResult;
+}
+
+export interface UnbindAccountRequest {
+  readonly identityId: string;
+  readonly account: UserAccount;
+  readonly now?: Date;
+}
+
+export interface SetPrimaryAccountRequest {
+  readonly identityId: string;
+  readonly account: UserAccount;
+  readonly now?: Date;
+}
+
+export interface SensitiveOperationAuthorizationRequest {
+  readonly identityId: string;
+  readonly message: SiwxMessage;
+  readonly signature: string;
+  readonly nonce: string;
+  readonly now?: Date;
+}
+
+export interface SensitiveOperationAuthorizationResult {
+  readonly ok: boolean;
+  readonly identity?: Identity;
+  readonly account?: UserAccount;
+  readonly reason?: string;
 }
 
 export interface RefreshSessionRequest {
@@ -570,6 +743,12 @@ export interface ServerAuth {
     options?: { readonly now?: Date; readonly expectedPurpose?: NoncePurpose }
   ): Promise<NonceConsumeResult>;
   verifySignIn(request: VerifySignInRequest): Promise<VerifySignInResult>;
+  bindAccount(request: BindAccountRequest): Promise<BindAccountResult>;
+  unbindAccount(request: UnbindAccountRequest): Promise<Identity>;
+  setPrimaryAccount(request: SetPrimaryAccountRequest): Promise<Identity>;
+  authorizeSensitiveOperation(
+    request: SensitiveOperationAuthorizationRequest
+  ): Promise<SensitiveOperationAuthorizationResult>;
   issueSession(user: User, options?: { readonly now?: Date }): JwtSession;
   refreshSession(request: RefreshSessionRequest): Promise<RefreshSessionResult>;
   verifySession(token: string, options?: { readonly now?: Date }): Promise<VerifiedJwtSession>;
@@ -780,7 +959,11 @@ export function createServerAuth(options: ServerAuthOptions): ServerAuth {
         subject: user.id,
         secret: options.jwtSecret,
         expiresInSeconds: sessionTtlSeconds,
-        claims: { did_account: account, did_session_version: sessionVersion },
+        claims: {
+          did_account: account,
+          did_identity: identitySnapshot(user),
+          did_session_version: sessionVersion
+        },
         ...(request.now ? { now: request.now } : {}),
         ...(options.issuer ? { issuer: options.issuer } : {}),
         ...(options.audience ? { audience: options.audience } : {})
@@ -789,14 +972,96 @@ export function createServerAuth(options: ServerAuthOptions): ServerAuth {
         ...(request.now ? { now: request.now } : {})
       });
 
-      return { user, session, refreshToken, verification };
+      return { user, identity: user, session, refreshToken, verification };
+    },
+    async bindAccount(request) {
+      const consumed = await nonceStore.consume(request.nonce, {
+        expectedPurpose: "bind-account",
+        ...(request.now ? { now: request.now } : {})
+      });
+
+      if (!consumed.ok) {
+        return Promise.reject(new Error(`Nonce ${consumed.reason}.`));
+      }
+
+      assertNonceMatchesMessage(consumed.record, request.message, { requireNonceDomain });
+
+      const verification = await verifySiwx({
+        message: request.message,
+        signature: request.signature,
+        nonce: request.nonce
+      });
+
+      if (!verification.ok) {
+        return Promise.reject(new Error(verification.reason ?? "SIWX verification failed."));
+      }
+
+      const account = accountFromSiwxMessage(request.message);
+      const identity = await userRepository.bindAccount(request.identityId, account, {
+        ...(request.now ? { now: request.now } : {})
+      });
+
+      return { identity, account, verification };
+    },
+    unbindAccount(request) {
+      return userRepository.unbindAccount(request.identityId, request.account, {
+        ...(request.now ? { now: request.now } : {})
+      });
+    },
+    setPrimaryAccount(request) {
+      return userRepository.setPrimaryAccount(request.identityId, request.account, {
+        ...(request.now ? { now: request.now } : {})
+      });
+    },
+    async authorizeSensitiveOperation(request) {
+      const consumed = await nonceStore.consume(request.nonce, {
+        expectedPurpose: "reauthenticate",
+        ...(request.now ? { now: request.now } : {})
+      });
+
+      if (!consumed.ok) {
+        return { ok: false, reason: `Nonce ${consumed.reason}.` };
+      }
+
+      try {
+        assertNonceMatchesMessage(consumed.record, request.message, { requireNonceDomain });
+      } catch (error) {
+        return { ok: false, reason: error instanceof Error ? error.message : "Nonce mismatch." };
+      }
+
+      const verification = await verifySiwx({
+        message: request.message,
+        signature: request.signature,
+        nonce: request.nonce
+      });
+
+      if (!verification.ok) {
+        return { ok: false, reason: verification.reason ?? "SIWX verification failed." };
+      }
+
+      const identity = await userRepository.findById(request.identityId);
+
+      if (!identity) {
+        return { ok: false, reason: "Identity not found." };
+      }
+
+      const account = accountFromSiwxMessage(request.message);
+      const boundAccount = identity.accounts.find(
+        (candidate) => userAccountKey(candidate) === userAccountKey(account)
+      );
+
+      if (!boundAccount) {
+        return { ok: false, reason: "Account is not bound to this identity." };
+      }
+
+      return { ok: true, identity, account: boundAccount };
     },
     issueSession(user, sessionOptions = {}) {
       return issueJwtSession({
         subject: user.id,
         secret: options.jwtSecret,
         expiresInSeconds: sessionTtlSeconds,
-        claims: { did_session_version: 0 },
+        claims: { did_identity: identitySnapshot(user), did_session_version: 0 },
         ...(sessionOptions.now ? { now: sessionOptions.now } : {}),
         ...(options.issuer ? { issuer: options.issuer } : {}),
         ...(options.audience ? { audience: options.audience } : {})
@@ -913,6 +1178,7 @@ export function createAuthRouteHandlers(options: AuthRouteHandlersOptions): Auth
           session: result.session,
           refreshToken: result.refreshToken,
           user: result.user,
+          identity: result.identity,
           verification: result.verification
         },
         cookies: [
@@ -1545,11 +1811,30 @@ function userAccountKey(account: UserAccount): string {
   return `${account.chainType}:${account.chainId}:${normalizeAddress(account.address, account.chainType)}`;
 }
 
+function normalizeUserAccount(account: UserAccount): UserAccount {
+  return {
+    chainType: account.chainType,
+    chainId: account.chainId,
+    address: normalizeAddress(account.address, account.chainType),
+    ...(account.publicKey ? { publicKey: account.publicKey } : {})
+  };
+}
+
 function accountFromSiwxMessage(message: SiwxMessage): UserAccount {
   return {
     chainType: message.chainType,
     chainId: message.chainId,
     address: normalizeAddress(message.address, message.chainType)
+  };
+}
+
+function identitySnapshot(identity: Identity): Readonly<Record<string, unknown>> {
+  return {
+    id: identity.id,
+    accounts: identity.accounts,
+    ...(identity.primaryAccount ? { primaryAccount: identity.primaryAccount } : {}),
+    createdAt: identity.createdAt.toISOString(),
+    updatedAt: identity.updatedAt.toISOString()
   };
 }
 

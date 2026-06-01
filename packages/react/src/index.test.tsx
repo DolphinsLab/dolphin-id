@@ -37,12 +37,22 @@ describe("dolphinReactReducer", () => {
       wallet,
       accounts: [account],
       account,
-      session
+      session,
+      identity: {
+        id: "identity-1",
+        accounts: [{ chainType: "evm", chainId: "1", address: "0x1234" }],
+        primaryAccount: { chainType: "evm", chainId: "1", address: "0x1234" }
+      }
     });
 
     expect(signedIn.state.status).toBe("signed-in");
     expect(signedIn.session).toEqual(session);
     expect(signedIn.activeAccount).toEqual(account);
+    expect(signedIn.identity?.primaryAccount).toEqual({
+      chainType: "evm",
+      chainId: "1",
+      address: "0x1234"
+    });
   });
 
   it("surfaces refreshable and logged-out session states", () => {
@@ -148,6 +158,9 @@ describe("signInWithAdapter", () => {
     expect(result.message.format).toBe("eip4361");
     expect(result.signature).toBe("signed:eip4361");
     expect(result.session.subject).toBe("evm:1:0x1234");
+    expect(result.response.identity?.accounts).toEqual([
+      { chainType: "evm", chainId: "1", address: "0x1234" }
+    ]);
   });
 
   it("completes a headless Sui sign-in", async () => {
@@ -224,6 +237,11 @@ describe("createEndpointAuthClient", () => {
                     subject: "evm:1:0x1234",
                     issuedAt: "2026-01-01T00:00:00.000Z",
                     expiresAt: "2026-01-31T00:00:00.000Z"
+                  },
+                  identity: {
+                    id: "identity-1",
+                    accounts: [{ chainType: "evm", chainId: "1", address: "0x1234" }],
+                    primaryAccount: { chainType: "evm", chainId: "1", address: "0x1234" }
                   }
                 }
         };
@@ -257,6 +275,21 @@ function createAuthClient(): DolphinAuthClient {
           subject: `${message.chainType}:${message.chainId}:${message.address.toLowerCase()}`,
           issuedAt: "2026-01-01T00:00:00.000Z",
           expiresAt: "2026-01-31T00:00:00.000Z"
+        },
+        identity: {
+          id: `${message.chainType}:${message.chainId}:${message.address.toLowerCase()}`,
+          accounts: [
+            {
+              chainType: message.chainType,
+              chainId: message.chainId,
+              address: message.address.toLowerCase()
+            }
+          ],
+          primaryAccount: {
+            chainType: message.chainType,
+            chainId: message.chainId,
+            address: message.address.toLowerCase()
+          }
         },
         verification: { ok: true }
       };

@@ -28,6 +28,8 @@ packages.
   `adapterId`.
 - `useDisconnect` / `useDisconnectWallet`: disconnects the active wallet.
 - `useAccounts`: returns accounts and active account.
+- `useIdentity`: returns the current identity snapshot, bound accounts, and
+  primary account.
 - `useSignIn`: runs nonce issue, SIWX message creation, wallet signature, server
   verify, and session storage in provider state.
 - `useSession`: returns current session, refresh token, status, signed-in,
@@ -54,15 +56,17 @@ hooks.
 `@dolphin-id/server` provides self-hosted auth primitives.
 
 - `createServerAuth`: creates `issueNonce`, `consumeNonce`, `verifySignIn`,
-  `issueSession`, `refreshSession`, `verifySession`, `revokeRefreshToken`, and
-  `invalidateSessions`.
+  `bindAccount`, `unbindAccount`, `setPrimaryAccount`,
+  `authorizeSensitiveOperation`, `issueSession`, `refreshSession`,
+  `verifySession`, `revokeRefreshToken`, and `invalidateSessions`.
 - `InMemoryNonceStore`: development nonce store.
 - `RedisNonceStore`: Redis-like nonce store adapter.
 - `InMemoryRefreshTokenStore`: development refresh token store with rotation and
   reuse rejection.
 - `InMemorySessionInvalidationStore`: per-subject session version store for
   forced logout.
-- `InMemoryUserRepository`: address-as-user repository.
+- `InMemoryUserRepository`: identity repository with unique account binding,
+  non-final unbinding, and primary account selection.
 - `issueJwtSession`: HS256 JWT issuing with configurable TTL.
 - `verifyJwtSession`: HS256 JWT verification for session-protected routes.
 - `verifyEvmSiweMessage`: verifies EVM EIP-4361 SIWE messages.
