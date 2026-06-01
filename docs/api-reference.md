@@ -84,6 +84,17 @@ hooks.
 - `assertProductionSafeUrl`: rejects production HTTP origins unless explicitly
   overridden.
 
+## Multi-Language Server SDKs
+
+- `sdks/go`: Go helpers for EVM SIWE, Sui personal-message, and HS256 session
+  claim validation.
+- `sdks/rust`: Rust helpers for EVM SIWE, Sui personal-message, and HS256
+  session claim validation.
+- `sdks/python`: Python helpers for EVM SIWE, Sui personal-message, and HS256
+  session claim validation.
+- `sdks/fixtures/server-auth.json`: Node-generated parity fixtures consumed by
+  all three SDK test suites.
+
 ## Hosted Service
 
 `@dolphin-id/hosted` provides optional managed-service primitives while keeping
