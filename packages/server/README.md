@@ -18,6 +18,20 @@ Production apps should provide a chain-specific `verifySiwx` implementation from
 the relevant adapter slice. The default verifier only rejects missing signatures
 and exists so the auth orchestration can be tested independently.
 
+## Security Defaults
+
+- `verifySignIn` requires each sign-in nonce to be issued with a domain and
+  rejects messages whose domain differs from the nonce domain.
+- `createServerAuth` rejects short or obvious JWT secrets when
+  `runtimeEnvironment` is `production`, unless `allowWeakJwtSecret` is explicitly
+  set for a reviewed exception.
+- `publicOrigin` must use HTTPS in production unless `allowInsecureHttp` is
+  explicitly set.
+- `createSessionCookieOptions` provides HttpOnly cookie defaults, production
+  Secure enforcement, SameSite defaults, and SameSite=None/Secure validation.
+  Applications using cookie auth should pair unsafe methods with CSRF tokens or
+  same-site request validation.
+
 ## Sui Personal Message Verification
 
 Use `verifySuiPersonalMessage` as the `verifySiwx` implementation for Sui

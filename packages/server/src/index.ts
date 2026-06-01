@@ -8,6 +8,15 @@ import { createSiweMessage } from "viem/siwe";
 
 const DEFAULT_NONCE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
+const MIN_PRODUCTION_JWT_SECRET_LENGTH = 32;
+const WEAK_JWT_SECRETS = new Set([
+  "secret",
+  "password",
+  "changeme",
+  "development",
+  "local-development-secret",
+  "test-secret"
+]);
 
 export type NoncePurpose = "sign-in" | "bind-account" | "reauthenticate" | (string & {});
 
@@ -286,6 +295,38 @@ export interface VerificationResult {
 
 export type SiwxVerifier = (request: VerificationRequest) => Promise<VerificationResult>;
 
+export type RuntimeEnvironment = "development" | "test" | "production" | (string & {});
+
+export type CookieSameSite = "lax" | "strict" | "none";
+
+export interface SessionCookieOptionsInput {
+  readonly name?: string;
+  readonly httpOnly?: boolean;
+  readonly secure?: boolean;
+  readonly sameSite?: CookieSameSite;
+  readonly path?: string;
+  readonly maxAgeSeconds?: number;
+  readonly expires?: Date;
+  readonly runtimeEnvironment?: RuntimeEnvironment;
+  readonly allowInsecureHttp?: boolean;
+}
+
+export interface SessionCookieOptions {
+  readonly name: string;
+  readonly httpOnly: boolean;
+  readonly secure: boolean;
+  readonly sameSite: CookieSameSite;
+  readonly path: string;
+  readonly maxAgeSeconds?: number;
+  readonly expires?: Date;
+}
+
+export interface ProductionSafeUrlOptions {
+  readonly runtimeEnvironment?: RuntimeEnvironment;
+  readonly allowInsecureHttp?: boolean;
+  readonly label?: string;
+}
+
 export interface SuiPersonalMessageVerificationOptions {
   readonly expectedAddress?: string;
   readonly expectedChainId?: string;
@@ -321,6 +362,11 @@ export interface ServerAuthOptions {
   readonly sessionTtlSeconds?: number;
   readonly issuer?: string;
   readonly audience?: string;
+  readonly runtimeEnvironment?: RuntimeEnvironment;
+  readonly allowWeakJwtSecret?: boolean;
+  readonly publicOrigin?: string;
+  readonly allowInsecureHttp?: boolean;
+  readonly requireNonceDomain?: boolean;
 }
 
 export interface ServerAuth {
@@ -334,11 +380,14 @@ export interface ServerAuth {
 }
 
 export function createServerAuth(options: ServerAuthOptions): ServerAuth {
+  validateServerAuthSecurity(options);
+
   const nonceStore = options.nonceStore ?? new InMemoryNonceStore();
   const userRepository = options.userRepository ?? new InMemoryUserRepository();
   const verifySiwx = options.verifySiwx ?? verifySiwxPlaceholder;
   const nonceTtlMs = options.nonceTtlMs ?? DEFAULT_NONCE_TTL_MS;
   const sessionTtlSeconds = options.sessionTtlSeconds ?? DEFAULT_SESSION_TTL_SECONDS;
+  const requireNonceDomain = options.requireNonceDomain ?? true;
 
   return {
     async issueNonce(issueOptions = {}) {
@@ -371,7 +420,7 @@ export function createServerAuth(options: ServerAuthOptions): ServerAuth {
         return Promise.reject(new Error(`Nonce ${consumed.reason}.`));
       }
 
-      assertNonceMatchesMessage(consumed.record, request.message);
+      assertNonceMatchesMessage(consumed.record, request.message, { requireNonceDomain });
 
       const verification = await verifySiwx({
         message: request.message,
@@ -417,6 +466,52 @@ export function isNonceExpired(
   now: Date = new Date()
 ): boolean {
   return record.expiresAt.getTime() <= now.getTime();
+}
+
+export function createSessionCookieOptions(
+  options: SessionCookieOptionsInput = {}
+): SessionCookieOptions {
+  const runtimeEnvironment = getRuntimeEnvironment(options.runtimeEnvironment);
+  const secure = options.secure ?? runtimeEnvironment === "production";
+  const sameSite = options.sameSite ?? "lax";
+
+  if (runtimeEnvironment === "production" && !secure && !options.allowInsecureHttp) {
+    throw new Error("Secure session cookies are required in production.");
+  }
+
+  if (sameSite === "none" && !secure) {
+    throw new Error("SameSite=None session cookies must also set Secure.");
+  }
+
+  return {
+    name: options.name ?? "dolphin_session",
+    httpOnly: options.httpOnly ?? true,
+    secure,
+    sameSite,
+    path: options.path ?? "/",
+    ...(options.maxAgeSeconds ? { maxAgeSeconds: options.maxAgeSeconds } : {}),
+    ...(options.expires ? { expires: options.expires } : {})
+  };
+}
+
+export function assertProductionSafeUrl(url: string, options: ProductionSafeUrlOptions = {}): void {
+  const runtimeEnvironment = getRuntimeEnvironment(options.runtimeEnvironment);
+
+  if (runtimeEnvironment !== "production" || options.allowInsecureHttp) {
+    return;
+  }
+
+  let parsed: URL;
+
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`${options.label ?? "URL"} must be an absolute URL.`);
+  }
+
+  if (parsed.protocol !== "https:") {
+    throw new Error(`${options.label ?? "URL"} must use HTTPS in production.`);
+  }
 }
 
 export async function verifySiwxPlaceholder(
@@ -645,8 +740,16 @@ function rawEvmSiweMessage(message: SiwxMessage): string {
   });
 }
 
-function assertNonceMatchesMessage(record: NonceRecord, message: SiwxMessage): void {
-  if (record.domain && record.domain !== message.domain) {
+function assertNonceMatchesMessage(
+  record: NonceRecord,
+  message: SiwxMessage,
+  options: { readonly requireNonceDomain: boolean }
+): void {
+  if (options.requireNonceDomain && !record.domain) {
+    throw new Error("Nonce domain is required.");
+  }
+
+  if (record.domain !== message.domain) {
     throw new Error("Nonce domain mismatch.");
   }
 
@@ -659,6 +762,37 @@ function assertNonceMatchesMessage(record: NonceRecord, message: SiwxMessage): v
   }
 
   assertTimingSafeEqual(record.nonce, message.nonce, "Nonce message mismatch.");
+}
+
+function validateServerAuthSecurity(options: ServerAuthOptions): void {
+  const runtimeEnvironment = getRuntimeEnvironment(options.runtimeEnvironment);
+
+  if (!options.allowWeakJwtSecret && runtimeEnvironment === "production") {
+    assertStrongJwtSecret(options.jwtSecret);
+  }
+
+  if (options.publicOrigin) {
+    assertProductionSafeUrl(options.publicOrigin, {
+      runtimeEnvironment,
+      label: "publicOrigin",
+      ...(options.allowInsecureHttp ? { allowInsecureHttp: options.allowInsecureHttp } : {})
+    });
+  }
+}
+
+function assertStrongJwtSecret(secret: string): void {
+  if (
+    secret.length < MIN_PRODUCTION_JWT_SECRET_LENGTH ||
+    WEAK_JWT_SECRETS.has(secret.toLowerCase())
+  ) {
+    throw new Error(
+      `JWT secret must be at least ${MIN_PRODUCTION_JWT_SECRET_LENGTH} characters and non-obvious in production.`
+    );
+  }
+}
+
+function getRuntimeEnvironment(runtimeEnvironment?: RuntimeEnvironment): RuntimeEnvironment {
+  return runtimeEnvironment ?? process.env.NODE_ENV ?? "development";
 }
 
 function assertTimingSafeEqual(actual: string, expected: string, message: string): void {

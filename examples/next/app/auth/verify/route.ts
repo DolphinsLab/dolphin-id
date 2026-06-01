@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createSessionCookieOptions } from "@dolphin-id/server";
 
 import { SESSION_COOKIE, auth } from "../auth-store";
 
@@ -10,12 +11,18 @@ export async function POST(request: Request) {
     user: result.user,
     verification: result.verification
   });
+  const cookieOptions = createSessionCookieOptions({
+    name: SESSION_COOKIE,
+    expires: result.session.expiresAt,
+    runtimeEnvironment: process.env.NODE_ENV
+  });
 
-  response.cookies.set(SESSION_COOKIE, result.session.token, {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    expires: result.session.expiresAt
+  response.cookies.set(cookieOptions.name, result.session.token, {
+    httpOnly: cookieOptions.httpOnly,
+    secure: cookieOptions.secure,
+    sameSite: cookieOptions.sameSite,
+    path: cookieOptions.path,
+    expires: cookieOptions.expires
   });
 
   return response;
