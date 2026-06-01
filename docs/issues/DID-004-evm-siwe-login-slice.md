@@ -10,11 +10,11 @@ Deliver an end-to-end EVM login path using EIP-6963 wallet discovery, wallet con
 
 ## Acceptance criteria
 
-- [ ] EVM adapter discovers injected wallets through EIP-6963 where available.
-- [ ] EVM adapter connects, disconnects, and listens for account and chain changes.
-- [ ] SIWE messages include domain, address, chainId, nonce, issuedAt, and expirationTime.
-- [ ] Server verification validates domain, address, chainId, nonce, expiration, and signature.
-- [ ] Tests cover successful sign-in, rejected signature, wrong domain, expired nonce, and replayed nonce.
+- [x] EVM adapter discovers injected wallets through EIP-6963 where available.
+- [x] EVM adapter connects, disconnects, and listens for account and chain changes.
+- [x] SIWE messages include domain, address, chainId, nonce, issuedAt, and expirationTime.
+- [x] Server verification validates domain, address, chainId, nonce, expiration, and signature.
+- [x] Tests cover successful sign-in, rejected signature, wrong domain, expired nonce, and replayed nonce.
 
 ## Blocked by
 

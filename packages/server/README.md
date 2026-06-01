@@ -23,3 +23,9 @@ and exists so the auth orchestration can be tested independently.
 Use `verifySuiPersonalMessage` as the `verifySiwx` implementation for Sui
 sign-in. It validates chain type, normalized address ownership, chain identifier,
 nonce, expiration, and the personal-message signature.
+
+## EVM SIWE Verification
+
+Use `verifyEvmSiweMessage` as the `verifySiwx` implementation for EVM sign-in.
+It validates chain type, domain, address, chain ID, nonce, expiration, and the
+`personal_sign` signature over the SIWE message.

@@ -23,7 +23,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@dolphin-id/core": "workspace:*"
+    "@dolphin-id/core": "workspace:*",
+    "viem": "^2.51.3"
   },
   "publishConfig": {
     "access": "public"
