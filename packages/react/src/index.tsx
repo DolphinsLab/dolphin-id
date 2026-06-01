@@ -51,6 +51,7 @@ export interface DolphinSignInResponse {
   readonly session: SessionSnapshot;
   readonly refreshToken?: DolphinRefreshTokenSnapshot;
   readonly user?: unknown;
+  readonly identity?: DolphinIdentitySnapshot;
   readonly verification?: unknown;
 }
 
@@ -76,6 +77,21 @@ export interface DolphinLogoutRequest {
 
 export interface DolphinLogoutResponse {
   readonly ok: boolean;
+}
+
+export interface DolphinIdentitySnapshot {
+  readonly id: string;
+  readonly accounts: readonly DolphinIdentityAccount[];
+  readonly primaryAccount?: DolphinIdentityAccount;
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
+}
+
+export interface DolphinIdentityAccount {
+  readonly chainType: string;
+  readonly chainId: string;
+  readonly address: string;
+  readonly publicKey?: string;
 }
 
 export interface DolphinAuthClient {
@@ -149,6 +165,7 @@ export interface DolphinReactState {
   readonly accounts: readonly Account[];
   readonly activeWallet?: Wallet;
   readonly activeAccount?: Account;
+  readonly identity?: DolphinIdentitySnapshot;
   readonly session?: SessionSnapshot;
   readonly refreshToken?: DolphinRefreshTokenSnapshot;
   readonly events: readonly DolphinEvent[];
@@ -166,6 +183,7 @@ export type DolphinReactAction =
       readonly account: Account;
       readonly session: SessionSnapshot;
       readonly refreshToken?: DolphinRefreshTokenSnapshot;
+      readonly identity?: DolphinIdentitySnapshot;
     }
   | { readonly type: "sessionRefreshable"; readonly session: SessionSnapshot }
   | {
@@ -359,6 +377,7 @@ export function DolphinProvider({ config, children }: DolphinProviderProps) {
           accounts: state.accounts.length > 0 ? state.accounts : [account],
           account,
           session: result.session,
+          ...(result.response.identity ? { identity: result.response.identity } : {}),
           ...(result.response.refreshToken ? { refreshToken: result.response.refreshToken } : {})
         });
         return result;
@@ -496,6 +515,15 @@ export function useAccounts() {
   return { accounts, activeAccount };
 }
 
+export function useIdentity() {
+  const { identity } = useDolphin();
+  return {
+    identity,
+    accounts: identity?.accounts ?? [],
+    primaryAccount: identity?.primaryAccount
+  };
+}
+
 export function useConnectWallet() {
   return useDolphin().connectWallet;
 }
@@ -603,6 +631,7 @@ export function dolphinReactReducer(
         accounts: action.accounts,
         activeWallet: action.wallet,
         activeAccount: action.account,
+        ...(action.identity ? { identity: action.identity } : {}),
         session: action.session,
         ...(action.refreshToken ? { refreshToken: action.refreshToken } : {})
       };
@@ -813,6 +842,7 @@ function readSignInResponse(value: unknown): DolphinSignInResponse {
     return {
       session: value.session,
       ...(isRefreshTokenSnapshot(value.refreshToken) ? { refreshToken: value.refreshToken } : {}),
+      ...(isIdentitySnapshot(value.identity) ? { identity: value.identity } : {}),
       ...("user" in value ? { user: value.user } : {}),
       ...("verification" in value ? { verification: value.verification } : {})
     };
@@ -857,6 +887,28 @@ function isRefreshTokenSnapshot(value: unknown): value is DolphinRefreshTokenSna
     typeof value.subject === "string" &&
     typeof value.issuedAt === "string" &&
     typeof value.expiresAt === "string"
+  );
+}
+
+function isIdentitySnapshot(value: unknown): value is DolphinIdentitySnapshot {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    Array.isArray(value.accounts) &&
+    value.accounts.every(isIdentityAccount) &&
+    (value.primaryAccount === undefined || isIdentityAccount(value.primaryAccount)) &&
+    (value.createdAt === undefined || typeof value.createdAt === "string") &&
+    (value.updatedAt === undefined || typeof value.updatedAt === "string")
+  );
+}
+
+function isIdentityAccount(value: unknown): value is DolphinIdentityAccount {
+  return (
+    isRecord(value) &&
+    typeof value.chainType === "string" &&
+    typeof value.chainId === "string" &&
+    typeof value.address === "string" &&
+    (value.publicKey === undefined || typeof value.publicKey === "string")
   );
 }
 

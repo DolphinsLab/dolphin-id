@@ -51,8 +51,8 @@ state and components. `@dolphin-id/server` consumes SIWX and account contracts
 for nonce, verification, and session flows.
 
 `@dolphin-id/server` exposes the self-hosted auth core: nonce issue/consume,
-in-memory and Redis nonce stores, address-as-user repositories, SIWX verification
-orchestration, and configurable seven-day-by-default JWT sessions.
+in-memory and Redis nonce stores, multi-wallet identity repositories, SIWX
+verification orchestration, and configurable seven-day-by-default JWT sessions.
 
 `@dolphin-id/cli` scaffolds runnable Next.js apps with selectable EVM/Sui chains,
 default UI or headless hooks, self-hosted or hosted auth, and cookie or
@@ -77,9 +77,9 @@ signing, and server-side Ed25519 signature verification.
 The Bitcoin and Aptos slices add P2PKH Bitcoin and Ed25519 Aptos SIWX flows,
 chain-specific adapters, server verification helpers, and example wiring.
 
-The React slice provides a headless `DolphinProvider`, wallet/account/session
-hooks, endpoint-backed auth client configuration, and UI-free EVM/Sui SIWX
-sign-in flows.
+The React slice provides a headless `DolphinProvider`,
+wallet/account/identity/session hooks, endpoint-backed auth client
+configuration, and UI-free EVM/Sui SIWX sign-in flows.
 
 The UI slice layers optional default components on top of the headless hooks:
 connect button, chain-grouped wallet modal, account display, disconnect action,

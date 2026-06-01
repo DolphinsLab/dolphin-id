@@ -33,6 +33,8 @@ rendering does not touch browser wallet APIs.
 - `useConnect` / `useConnectWallet` connects a wallet by ID.
 - `useDisconnect` / `useDisconnectWallet` disconnects the active wallet.
 - `useAccounts` returns connected accounts and the active account.
+- `useIdentity` returns the signed-in identity snapshot, bound accounts, and
+  primary account when the server includes them in the verify response.
 - `useSignIn` performs the SIWX nonce, message, signature, verify, and session
   flow with the configured auth client.
 - `useSession` returns the current session, refresh token, signed-in, expired,
