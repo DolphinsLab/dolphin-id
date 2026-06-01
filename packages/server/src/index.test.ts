@@ -1,3 +1,5 @@
+import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
+import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -8,9 +10,9 @@ import {
   decodeJwtPayload,
   issueJwtSession,
   verifyEvmSiweMessage,
+  verifySuiPersonalMessage,
   type RedisNonceClient
 } from "./index";
-import { privateKeyToAccount } from "viem/accounts";
 
 describe("nonce stores", () => {
   it("rejects expired nonce consumption", async () => {
@@ -202,21 +204,21 @@ describe("verifyEvmSiweMessage", () => {
     });
   });
 
-  it("rejects an invalid signature", async () => {
+  it("rejects an invalid EVM signature", async () => {
     await expect(signIn({ signature: "0xdeadbeef" })).rejects.toThrow("SIWE signature is invalid");
   });
 
-  it("rejects the wrong domain", async () => {
+  it("rejects the wrong EVM domain", async () => {
     await expect(signIn({ domain: "evil.example" })).rejects.toThrow("Nonce domain mismatch");
   });
 
-  it("rejects expired nonce before verifying the signature", async () => {
+  it("rejects expired nonce before verifying the EVM signature", async () => {
     await expect(signIn({ nonceNow: new Date("2025-12-31T23:00:00.000Z") })).rejects.toThrow(
       "Nonce expired"
     );
   });
 
-  it("rejects replayed nonce", async () => {
+  it("rejects replayed EVM nonce", async () => {
     const auth = createServerAuth({
       jwtSecret: "secret",
       verifySiwx: (request) => verifyEvmSiweMessage(request, { now: issuedAt })
@@ -246,6 +248,118 @@ describe("verifyEvmSiweMessage", () => {
       nonce: nonce.nonce,
       signature,
       message
+    };
+
+    await expect(auth.verifySignIn(request)).resolves.toMatchObject({
+      verification: { ok: true }
+    });
+    await expect(auth.verifySignIn(request)).rejects.toThrow("Nonce not_found");
+  });
+});
+
+describe("verifySuiPersonalMessage", () => {
+  const issuedAt = new Date("2026-01-01T00:00:00.000Z");
+
+  async function signIn(
+    overrides: {
+      readonly address?: string;
+      readonly nonceNow?: Date;
+      readonly signature?: string;
+      readonly expirationTime?: Date;
+    } = {}
+  ) {
+    const keypair = Ed25519Keypair.generate();
+    const address = keypair.getPublicKey().toSuiAddress();
+    const auth = createServerAuth({
+      jwtSecret: "secret",
+      verifySiwx: (request) =>
+        verifySuiPersonalMessage(request, {
+          expectedAddress: address,
+          expectedChainId: "testnet",
+          now: issuedAt
+        })
+    });
+    const nonce = await auth.issueNonce({
+      now: overrides.nonceNow ?? issuedAt,
+      domain: "example.com",
+      chainType: "sui",
+      address
+    });
+    const message = {
+      format: "sui-personal-message",
+      chainType: "sui",
+      domain: "example.com",
+      address: overrides.address ?? address,
+      uri: "https://example.com/login",
+      version: "1",
+      chainId: "testnet",
+      nonce: nonce.nonce,
+      issuedAt: issuedAt.toISOString(),
+      expirationTime: (
+        overrides.expirationTime ?? new Date("2026-01-01T00:05:00.000Z")
+      ).toISOString(),
+      raw: `Dolphin ID Sui Sign-In\nDomain: example.com\nAddress: ${overrides.address ?? address}\nChain ID: testnet\nNonce: ${nonce.nonce}\nURI: https://example.com/login\nIssued At: ${issuedAt.toISOString()}\nExpiration Time: ${(overrides.expirationTime ?? new Date("2026-01-01T00:05:00.000Z")).toISOString()}`
+    } as const;
+    const signature =
+      overrides.signature ??
+      (await keypair.signPersonalMessage(new TextEncoder().encode(message.raw))).signature;
+
+    return auth.verifySignIn({
+      now: issuedAt,
+      nonce: nonce.nonce,
+      signature,
+      message
+    });
+  }
+
+  it("accepts a valid Sui personal-message sign-in", async () => {
+    await expect(signIn()).resolves.toMatchObject({
+      verification: { ok: true }
+    });
+  });
+
+  it("rejects an invalid Sui signature", async () => {
+    await expect(signIn({ signature: "invalid" })).rejects.toThrow("Sui signature is invalid");
+  });
+
+  it("rejects the wrong Sui address", async () => {
+    const other = Ed25519Keypair.generate().getPublicKey().toSuiAddress();
+    await expect(signIn({ address: other })).rejects.toThrow("Nonce address mismatch");
+  });
+
+  it("rejects expired nonce before verifying the Sui signature", async () => {
+    await expect(signIn({ nonceNow: new Date("2025-12-31T23:00:00.000Z") })).rejects.toThrow(
+      "Nonce expired"
+    );
+  });
+
+  it("rejects replayed Sui nonce", async () => {
+    const keypair = Ed25519Keypair.generate();
+    const address = keypair.getPublicKey().toSuiAddress();
+    const auth = createServerAuth({
+      jwtSecret: "secret",
+      verifySiwx: (request) => verifySuiPersonalMessage(request, { now: issuedAt })
+    });
+    const nonce = await auth.issueNonce({ now: issuedAt, chainType: "sui", address });
+    const raw = `Dolphin ID Sui Sign-In\nDomain: example.com\nAddress: ${address}\nChain ID: testnet\nNonce: ${nonce.nonce}\nURI: https://example.com/login\nIssued At: ${issuedAt.toISOString()}\nExpiration Time: 2026-01-01T00:05:00.000Z`;
+    const signature = (await keypair.signPersonalMessage(new TextEncoder().encode(raw))).signature;
+    const request = {
+      now: issuedAt,
+      nonce: nonce.nonce,
+      signature,
+      message: {
+        format: "sui-personal-message",
+        chainType: "sui",
+        domain: "example.com",
+        address,
+        uri: "https://example.com/login",
+        version: "1",
+        chainId: "testnet",
+        nonce: nonce.nonce,
+        issuedAt: issuedAt.toISOString(),
+        expirationTime: "2026-01-01T00:05:00.000Z",
+        raw
+      } as const
     };
 
     await expect(auth.verifySignIn(request)).resolves.toMatchObject({

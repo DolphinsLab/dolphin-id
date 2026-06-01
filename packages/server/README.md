@@ -18,6 +18,12 @@ Production apps should provide a chain-specific `verifySiwx` implementation from
 the relevant adapter slice. The default verifier only rejects missing signatures
 and exists so the auth orchestration can be tested independently.
 
+## Sui Personal Message Verification
+
+Use `verifySuiPersonalMessage` as the `verifySiwx` implementation for Sui
+sign-in. It validates chain type, normalized address ownership, chain identifier,
+nonce, expiration, and the personal-message signature.
+
 ## EVM SIWE Verification
 
 Use `verifyEvmSiweMessage` as the `verifySiwx` implementation for EVM sign-in.

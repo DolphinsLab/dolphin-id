@@ -44,6 +44,10 @@ The EVM slice includes EIP-6963 injected wallet discovery, EIP-1193 connection
 and event handling, EIP-4361 SIWE message creation, `personal_sign` signing, and
 server-side SIWE signature verification.
 
+The Sui slice includes Wallet Standard-style discovery, connection and account
+events, personal-message sign-in payload construction, Sui address normalization,
+and server-side personal-message signature verification.
+
 ## Local Development
 
 Install dependencies:
