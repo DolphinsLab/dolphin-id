@@ -10,11 +10,11 @@ Define the chain-neutral contracts that all Dolphin ID adapters must implement, 
 
 ## Acceptance criteria
 
-- [ ] `ChainAdapter`, `Wallet`, `Account`, `ChainType`, and SIWX core types are exported from core.
-- [ ] Adapter contracts are chain-neutral and do not import EVM, Sui, or Solana SDKs.
-- [ ] Address normalization is represented as an adapter responsibility.
-- [ ] Contract tests demonstrate how a mock adapter satisfies the interface.
-- [ ] Public package boundaries are documented.
+- [x] `ChainAdapter`, `Wallet`, `Account`, `ChainType`, and SIWX core types are exported from core.
+- [x] Adapter contracts are chain-neutral and do not import EVM, Sui, or Solana SDKs.
+- [x] Address normalization is represented as an adapter responsibility.
+- [x] Contract tests demonstrate how a mock adapter satisfies the interface.
+- [x] Public package boundaries are documented.
 
 ## Blocked by
 
