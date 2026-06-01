@@ -13,6 +13,8 @@ The core package exports:
   `NormalizedAddress`
 - SIWX contracts: `SiwxMessage`, `SiwxMessageInput`, `SignedSiwxMessage`,
   `SiwxMessageFormat`, and `SiwxMessagePurpose`
+- Shared error, event, and state types: `DolphinError`, `DolphinErrorCode`,
+  `DolphinStage`, `DolphinEvent`, `DolphinState`, and `SessionSnapshot`
 - Adapter contracts: `ChainAdapter`, connection request/result types, signing
   request types, event types, `AdapterEventHandler`, and `Unsubscribe`
 - Small helpers that are chain-independent, such as `defineAdapter` and
@@ -34,3 +36,16 @@ Each adapter is responsible for:
 
 This keeps product code stable while chain-specific behavior evolves behind the
 adapter boundary.
+
+## Errors, Events, and State
+
+All packages should use the shared error, event, and state model instead of
+inventing package-local status strings.
+
+- `DolphinError` includes a stable `code`, lifecycle `stage`, optional
+  `chainType`, optional `walletName`, and `recoverable` flag.
+- `DolphinEvent` covers wallet connection, account changes, chain changes,
+  sign-in, session, and disconnect events. Use `normalizeDolphinEvent` to fill
+  derived `chainType`, `walletName`, and timestamp fields.
+- `DolphinState` is the React-facing state union for `idle`, `loading`,
+  `connected`, `signed-in`, `failed`, and `expired`.

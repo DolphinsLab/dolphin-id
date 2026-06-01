@@ -36,6 +36,10 @@ for nonce, verification, and session flows.
 in-memory and Redis nonce stores, address-as-user repositories, SIWX verification
 orchestration, and configurable seven-day-by-default JWT sessions.
 
+Errors, events, and React-facing state also live in `@dolphin-id/core` so
+adapters, hooks, UI, and server calls report failures and lifecycle transitions
+with the same codes, stages, recoverability flags, and state statuses.
+
 ## Local Development
 
 Install dependencies:
