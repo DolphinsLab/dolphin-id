@@ -31,6 +31,7 @@ repository is organized as a pnpm workspace with scoped packages under
 - [CLI scaffolder](docs/cli.md)
 - [Third-party adapter specification](docs/adapter-spec.md)
 - [Security guide](docs/security.md)
+- [v1.0 security audit summary](docs/security-audit.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
 ## Package Boundaries

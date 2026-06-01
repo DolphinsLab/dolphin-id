@@ -97,3 +97,25 @@ createServerAuth({
   publicOrigin: "https://example.com"
 });
 ```
+
+## Hosted Service Controls
+
+Hosted projects must use exact normalized allow-list entries such as
+`example.com` or `example.com:443`. URL strings, wildcard domains, paths,
+credentials, empty allow-lists, and invalid ports are rejected.
+
+`createHostedAuthService` should receive `runtimeEnvironment: "production"` and
+a high-entropy `jwtSecret` in deployed environments. Without a strong secret,
+the hosted service refuses to construct the default server auth core in
+production.
+
+Hosted sessions are scoped to the project that verified the login. A session
+token produced for one hosted project cannot be read through another project's
+API key, even when both projects use the same underlying auth core.
+
+Failure paths for authenticated hosted projects are audit-logged for nonce
+issue, verification, and session reads. Audit events intentionally do not store
+raw API keys, refresh tokens, or session tokens.
+
+See [v1.0 security audit summary](security-audit.md) for the release audit
+scope, remediated findings, accepted risks, and public release notes.

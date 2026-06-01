@@ -10,11 +10,24 @@ Complete the v1.0 security audit process, remediate findings, and publish a secu
 
 ## Acceptance criteria
 
-- [ ] Audit scope covers core, adapters, server SDK, examples, and hosted service.
-- [ ] Critical and high findings are fixed before v1.0.
-- [ ] Medium findings have fixes or documented risk acceptance.
-- [ ] Security tests are added for remediated issues.
-- [ ] Public security notes are published with the release.
+- [x] Audit scope covers core, adapters, server SDK, examples, and hosted service.
+- [x] Critical and high findings are fixed before v1.0.
+- [x] Medium findings have fixes or documented risk acceptance.
+- [x] Security tests are added for remediated issues.
+- [x] Public security notes are published with the release.
+
+## Implementation notes
+
+- Added `docs/security-audit.md` with the v1.0 audit scope, remediated
+  high/medium findings, accepted medium risks, and release security notes.
+- Scoped hosted sessions to the project that verified the login by adding hosted
+  session bindings. Cross-project session reads are rejected and audited.
+- Hardened hosted production construction so the default development JWT secret
+  is rejected when `runtimeEnvironment: "production"` is used.
+- Validated hosted allow-list domains and quota configuration before project
+  use.
+- Added regression tests for production secret enforcement, hosted domain/quota
+  validation, failure audit logs, and cross-project session isolation.
 
 ## Blocked by
 
