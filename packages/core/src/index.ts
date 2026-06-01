@@ -297,7 +297,9 @@ export type DolphinStateStatus =
   | "connected"
   | "signed-in"
   | "failed"
-  | "expired";
+  | "expired"
+  | "refreshable"
+  | "logged-out";
 
 export interface DolphinIdleState {
   readonly status: "idle";
@@ -337,13 +339,26 @@ export interface DolphinExpiredState {
   readonly reason: DolphinError;
 }
 
+export interface DolphinRefreshableState {
+  readonly status: "refreshable";
+  readonly session: SessionSnapshot;
+  readonly reason: DolphinError;
+}
+
+export interface DolphinLoggedOutState {
+  readonly status: "logged-out";
+  readonly reason?: DolphinError;
+}
+
 export type DolphinState =
   | DolphinIdleState
   | DolphinLoadingState
   | DolphinConnectedState
   | DolphinSignedInState
   | DolphinFailedState
-  | DolphinExpiredState;
+  | DolphinExpiredState
+  | DolphinRefreshableState
+  | DolphinLoggedOutState;
 
 export type AdapterEvent = DolphinEvent;
 

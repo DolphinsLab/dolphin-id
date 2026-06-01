@@ -1,16 +1,18 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createSessionCookieOptions } from "@dolphin-id/server";
 
 import { REFRESH_COOKIE, SESSION_COOKIE, auth } from "../auth-store";
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as Parameters<typeof auth.verifySignIn>[0];
-  const result = await auth.verifySignIn(body);
+  const cookieStore = await cookies();
+  const body = (await request.json().catch(() => ({}))) as { readonly refreshToken?: string };
+  const result = await auth.refreshSession({
+    refreshToken: body.refreshToken ?? cookieStore.get(REFRESH_COOKIE)?.value ?? ""
+  });
   const response = NextResponse.json({
     session: result.session,
-    refreshToken: result.refreshToken,
-    user: result.user,
-    verification: result.verification
+    refreshToken: result.refreshToken
   });
   const cookieOptions = createSessionCookieOptions({
     name: SESSION_COOKIE,

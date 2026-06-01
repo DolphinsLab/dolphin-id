@@ -402,11 +402,15 @@ function dolphinConfigTemplate(options: ResolvedScaffoldOptions): string {
       ? `{
   nonceUrl: hostedAuthUrl("/auth/nonce"),
   verifyUrl: hostedAuthUrl("/auth/verify"),
+  refreshUrl: hostedAuthUrl("/auth/refresh"),
+  logoutUrl: hostedAuthUrl("/auth/logout"),
   credentials: "${options.tokenStorage === "cookie" ? "include" : "omit"}"
 }`
       : `{
   nonceUrl: "/auth/nonce",
   verifyUrl: "/auth/verify",
+  refreshUrl: "/auth/refresh",
+  logoutUrl: "/auth/logout",
   credentials: "${options.tokenStorage === "cookie" ? "same-origin" : "omit"}"
 }`;
   const hostedHelper =
@@ -434,6 +438,7 @@ function selfHostedRouteTemplates(options: ResolvedScaffoldOptions): readonly Fi
     { path: "app/auth/auth-store.ts", content: authStoreTemplate(options) },
     { path: "app/auth/nonce/route.ts", content: nonceRouteTemplate() },
     { path: "app/auth/verify/route.ts", content: verifyRouteTemplate(options) },
+    { path: "app/auth/refresh/route.ts", content: refreshRouteTemplate(options) },
     { path: "app/auth/me/route.ts", content: meRouteTemplate(options) },
     { path: "app/auth/logout/route.ts", content: logoutRouteTemplate(options) }
   ];
@@ -452,6 +457,7 @@ function authStoreTemplate(options: ResolvedScaffoldOptions): string {
 } from "@dolphin-id/server";
 
 export const SESSION_COOKIE = "dolphin_session";
+export const REFRESH_COOKIE = "dolphin_refresh";
 
 const publicOrigin = process.env.DOLPHIN_PUBLIC_ORIGIN;
 
@@ -547,6 +553,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     session: result.session,
+    refreshToken: result.refreshToken,
     user: result.user,
     verification: result.verification
   });
@@ -557,18 +564,24 @@ export async function POST(request: Request) {
   return `import { NextResponse } from "next/server";
 import { createSessionCookieOptions } from "@dolphin-id/server";
 
-import { SESSION_COOKIE, auth } from "../auth-store";
+import { REFRESH_COOKIE, SESSION_COOKIE, auth } from "../auth-store";
 
 export async function POST(request: Request) {
   const result = await auth.verifySignIn(await request.json());
   const response = NextResponse.json({
     session: result.session,
+    refreshToken: result.refreshToken,
     user: result.user,
     verification: result.verification
   });
   const cookieOptions = createSessionCookieOptions({
     name: SESSION_COOKIE,
     expires: result.session.expiresAt,
+    runtimeEnvironment: process.env.NODE_ENV
+  });
+  const refreshCookieOptions = createSessionCookieOptions({
+    name: REFRESH_COOKIE,
+    expires: result.refreshToken.expiresAt,
     runtimeEnvironment: process.env.NODE_ENV
   });
 
@@ -578,6 +591,78 @@ export async function POST(request: Request) {
     sameSite: cookieOptions.sameSite,
     path: cookieOptions.path,
     expires: cookieOptions.expires
+  });
+  response.cookies.set(refreshCookieOptions.name, result.refreshToken.token, {
+    httpOnly: refreshCookieOptions.httpOnly,
+    secure: refreshCookieOptions.secure,
+    sameSite: refreshCookieOptions.sameSite,
+    path: refreshCookieOptions.path,
+    expires: refreshCookieOptions.expires
+  });
+
+  return response;
+}
+`;
+}
+
+function refreshRouteTemplate(options: ResolvedScaffoldOptions): string {
+  if (options.tokenStorage === "memory") {
+    return `import { NextResponse } from "next/server";
+
+import { auth } from "../auth-store";
+
+export async function POST(request: Request) {
+  const body = (await request.json().catch(() => ({}))) as { readonly refreshToken?: string };
+  const result = await auth.refreshSession({ refreshToken: body.refreshToken ?? "" });
+
+  return NextResponse.json({
+    session: result.session,
+    refreshToken: result.refreshToken
+  });
+}
+`;
+  }
+
+  return `import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
+import { createSessionCookieOptions } from "@dolphin-id/server";
+
+import { REFRESH_COOKIE, SESSION_COOKIE, auth } from "../auth-store";
+
+export async function POST(request: Request) {
+  const cookieStore = await cookies();
+  const body = (await request.json().catch(() => ({}))) as { readonly refreshToken?: string };
+  const result = await auth.refreshSession({
+    refreshToken: body.refreshToken ?? cookieStore.get(REFRESH_COOKIE)?.value ?? ""
+  });
+  const response = NextResponse.json({
+    session: result.session,
+    refreshToken: result.refreshToken
+  });
+  const cookieOptions = createSessionCookieOptions({
+    name: SESSION_COOKIE,
+    expires: result.session.expiresAt,
+    runtimeEnvironment: process.env.NODE_ENV
+  });
+  const refreshCookieOptions = createSessionCookieOptions({
+    name: REFRESH_COOKIE,
+    expires: result.refreshToken.expiresAt,
+    runtimeEnvironment: process.env.NODE_ENV
+  });
+
+  response.cookies.set(cookieOptions.name, result.session.token, {
+    httpOnly: cookieOptions.httpOnly,
+    secure: cookieOptions.secure,
+    sameSite: cookieOptions.sameSite,
+    path: cookieOptions.path,
+    expires: cookieOptions.expires
+  });
+  response.cookies.set(refreshCookieOptions.name, result.refreshToken.token, {
+    httpOnly: refreshCookieOptions.httpOnly,
+    secure: refreshCookieOptions.secure,
+    sameSite: refreshCookieOptions.sameSite,
+    path: refreshCookieOptions.path,
+    expires: refreshCookieOptions.expires
   });
 
   return response;
@@ -617,7 +702,14 @@ function logoutRouteTemplate(options: ResolvedScaffoldOptions): string {
   if (options.tokenStorage === "memory") {
     return `import { NextResponse } from "next/server";
 
-export async function POST() {
+import { auth } from "../auth-store";
+
+export async function POST(request: Request) {
+  const body = (await request.json().catch(() => ({}))) as { readonly refreshToken?: string };
+  if (body.refreshToken) {
+    await auth.revokeRefreshToken(body.refreshToken);
+  }
+
   return NextResponse.json({ ok: true });
 }
 `;
@@ -625,12 +717,23 @@ export async function POST() {
 
   return `import { NextResponse } from "next/server";
 
-import { SESSION_COOKIE } from "../auth-store";
+import { REFRESH_COOKIE, SESSION_COOKIE, auth } from "../auth-store";
 
-export async function POST() {
+export async function POST(request: Request) {
+  const body = (await request.json().catch(() => ({}))) as { readonly refreshToken?: string };
+  if (body.refreshToken) {
+    await auth.revokeRefreshToken(body.refreshToken);
+  }
+
   const response = NextResponse.json({ ok: true });
 
   response.cookies.set(SESSION_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0
+  });
+  response.cookies.set(REFRESH_COOKIE, "", {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
@@ -664,6 +767,11 @@ test("scaffold matches selected auth mode", async () => {
     options.auth === "self-hosted"
       ? 'await access(new URL("../app/auth/nonce/route.ts", import.meta.url));'
       : 'await assert.rejects(access(new URL("../app/auth/nonce/route.ts", import.meta.url)));'
+  }
+  ${
+    options.auth === "self-hosted"
+      ? 'await access(new URL("../app/auth/refresh/route.ts", import.meta.url));'
+      : 'await assert.rejects(access(new URL("../app/auth/refresh/route.ts", import.meta.url)));'
   }
 });
 `;

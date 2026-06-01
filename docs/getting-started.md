@@ -39,6 +39,8 @@ export function App() {
         auth: {
           nonceUrl: "/auth/nonce",
           verifyUrl: "/auth/verify",
+          refreshUrl: "/auth/refresh",
+          logoutUrl: "/auth/logout",
           credentials: "same-origin"
         }
       }}
@@ -105,8 +107,10 @@ Implement these routes in your framework:
   `chainType`, and `walletName`.
 - `POST /auth/verify`: call `auth.verifySignIn`, set a session cookie, and return
   the session.
+- `POST /auth/refresh`: call `auth.refreshSession`, rotate the refresh token,
+  and return the renewed session.
 - `GET /auth/me`: read the cookie-backed session.
-- `POST /auth/logout`: clear the cookie.
+- `POST /auth/logout`: revoke the refresh token and clear session cookies.
 
 See `examples/next` for complete Next.js App Router route handlers.
 
