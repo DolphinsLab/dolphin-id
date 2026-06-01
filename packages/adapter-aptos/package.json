@@ -1,6 +1,6 @@
 {
   "name": "@dolphin-id/adapter-aptos",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Aptos wallet adapter package for Dolphin ID.",
   "type": "module",
   "sideEffects": false,
