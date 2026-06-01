@@ -2,8 +2,10 @@ import { getAddress, numberToHex, type Address, type Hex } from "viem";
 import { createSiweMessage } from "viem/siwe";
 
 import {
+  createDolphinError,
   createIsoTimestamp,
   defineAdapter,
+  normalizeDolphinEvent,
   type Account,
   type AdapterEvent,
   type AdapterEventHandler,
@@ -121,14 +123,28 @@ export function createEvmAdapter(options: EvmAdapterOptions): ChainAdapter {
       activeWallet = wallet;
       activeAccount = account;
       bindProviderEvents(wallet.provider, wallet, chain, adapterId, emit);
-      emit({ type: "accountsChanged", adapterId, wallet, accounts: [account] });
+      emit(
+        normalizeDolphinEvent({
+          type: "accountsChanged",
+          stage: "account-change",
+          adapterId,
+          wallet,
+          accounts: [account]
+        })
+      );
 
       return { wallet, accounts: [account] };
     },
     async disconnect() {
       activeWallet = null;
       activeAccount = null;
-      emit({ type: "disconnect", adapterId });
+      emit(
+        normalizeDolphinEvent({
+          type: "disconnected",
+          stage: "disconnect",
+          adapterId
+        })
+      );
     },
     async getAccounts() {
       return activeAccount ? [activeAccount] : [];
@@ -343,13 +359,45 @@ function bindProviderEvents(
         adapterId
       };
     });
-    emit({ type: "accountsChanged", adapterId, wallet, accounts });
+    emit(
+      normalizeDolphinEvent({
+        type: "accountsChanged",
+        stage: "account-change",
+        adapterId,
+        wallet,
+        accounts
+      })
+    );
   });
   provider.on?.("chainChanged", (chainId) => {
-    emit({ type: "chainChanged", adapterId, wallet, chain: { ...chain, id: String(chainId) } });
+    emit(
+      normalizeDolphinEvent({
+        type: "chainChanged",
+        stage: "chain-change",
+        adapterId,
+        wallet,
+        chain: { ...chain, id: String(chainId) }
+      })
+    );
   });
   provider.on?.("disconnect", (error) => {
-    emit({ type: "disconnect", adapterId, wallet, error });
+    emit(
+      normalizeDolphinEvent({
+        type: "disconnected",
+        stage: "disconnect",
+        adapterId,
+        wallet,
+        error: createDolphinError({
+          code: "DISCONNECTED",
+          stage: "disconnect",
+          message: "EVM wallet disconnected.",
+          recoverable: true,
+          chainType: chain.type,
+          walletName: wallet.name,
+          cause: error
+        })
+      })
+    );
   });
 }
 
