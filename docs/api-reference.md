@@ -80,8 +80,8 @@ hooks.
 ## Adapter Packages
 
 - `@dolphin-id/adapter-evm`: EIP-6963/EIP-1193 wallet discovery and connection,
-  EIP-4361 SIWE message construction, `personal_sign`, and EVM address
-  normalization.
+  WalletConnect v2 provider injection, mobile deep link helpers, EIP-4361 SIWE
+  message construction, `personal_sign`, and EVM address normalization.
 - `@dolphin-id/adapter-sui`: Wallet Standard-style discovery and connection, Sui
   personal-message construction/signing, and Sui address normalization.
 - `@dolphin-id/adapter-solana`: Wallet Standard-style discovery and connection,

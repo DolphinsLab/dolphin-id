@@ -28,10 +28,52 @@ export interface Eip1193Provider {
   removeListener?(event: string, listener: (...args: readonly unknown[]) => void): void;
 }
 
+export interface WalletConnectProvider extends Eip1193Provider {
+  connect?(options?: WalletConnectConnectOptions): Promise<unknown>;
+  disconnect?(): Promise<void>;
+  readonly session?: unknown;
+  readonly accounts?: readonly string[];
+  readonly chainId?: number | string;
+}
+
+export interface WalletConnectConnectOptions {
+  readonly chains?: readonly number[];
+  readonly optionalChains?: readonly number[];
+  readonly rpcMap?: Readonly<Record<number, string>>;
+  readonly pairingTopic?: string;
+}
+
+export interface WalletConnectSessionStorage {
+  getItem(key: string): string | null | Promise<string | null>;
+  setItem(key: string, value: string): void | Promise<void>;
+  removeItem(key: string): void | Promise<void>;
+}
+
+export interface MobileWalletDeepLink {
+  readonly id: string;
+  readonly name: string;
+  readonly nativeUrl?: string;
+  readonly universalUrl?: string;
+}
+
+export interface WalletConnectOptions {
+  readonly provider: WalletConnectProvider;
+  readonly walletName?: string;
+  readonly iconUrl?: string;
+  readonly optionalChains?: readonly number[];
+  readonly rpcMap?: Readonly<Record<number, string>>;
+  readonly pairingTopic?: string;
+  readonly mobileDeepLinks?: readonly MobileWalletDeepLink[];
+  readonly sessionStorage?: WalletConnectSessionStorage;
+  readonly sessionStorageKey?: string;
+  readonly restoreSession?: boolean;
+}
+
 export interface EvmAdapterOptions {
   readonly chainId: number;
   readonly chainName?: string;
   readonly provider?: Eip1193Provider;
+  readonly walletConnect?: WalletConnectOptions;
   readonly walletName?: string;
   readonly siweExpirationMs?: number;
   readonly window?: Eip6963Window;
@@ -56,6 +98,7 @@ interface Eip6963ProviderDetail {
 
 interface DiscoveredEvmWallet extends Wallet {
   readonly provider: Eip1193Provider;
+  readonly walletConnect?: WalletConnectOptions;
 }
 
 export function createEvmAdapter(options: EvmAdapterOptions): ChainAdapter {
@@ -70,6 +113,7 @@ export function createEvmAdapter(options: EvmAdapterOptions): ChainAdapter {
   let discoveredWallets: readonly DiscoveredEvmWallet[] | null = null;
   let activeWallet: DiscoveredEvmWallet | null = null;
   let activeAccount: Account | null = null;
+  let restoreAttempted = false;
 
   const emit = (event: AdapterEvent) => {
     handlers.forEach((handler) => handler(event));
@@ -84,6 +128,7 @@ export function createEvmAdapter(options: EvmAdapterOptions): ChainAdapter {
         adapterId,
         chain,
         ...(options.provider ? { provider: options.provider } : {}),
+        ...(options.walletConnect ? { walletConnect: options.walletConnect } : {}),
         ...(options.walletName ? { walletName: options.walletName } : {}),
         ...(options.window ? { window: options.window } : {})
       });
@@ -94,33 +139,50 @@ export function createEvmAdapter(options: EvmAdapterOptions): ChainAdapter {
       const wallet = wallets.find((candidate) => candidate.id === request.walletId);
 
       if (!wallet) {
-        throw new Error(`EVM wallet not found: ${request.walletId}`);
+        throw createRecoverableEvmError(`EVM wallet not found: ${request.walletId}`);
       }
 
-      const accounts = await wallet.provider.request({ method: "eth_requestAccounts" });
-      const [address] = assertStringArray(accounts, "eth_requestAccounts");
+      if (wallet.walletConnect?.provider.connect) {
+        try {
+          await wallet.walletConnect.provider.connect({
+            chains: [options.chainId],
+            ...(wallet.walletConnect.optionalChains
+              ? { optionalChains: wallet.walletConnect.optionalChains }
+              : {}),
+            ...(wallet.walletConnect.rpcMap ? { rpcMap: wallet.walletConnect.rpcMap } : {}),
+            ...(wallet.walletConnect.pairingTopic
+              ? { pairingTopic: wallet.walletConnect.pairingTopic }
+              : {})
+          });
+        } catch (error) {
+          throw createRecoverableEvmError("WalletConnect connection was rejected.", error);
+        }
+      }
+
+      const accounts = await requestAccounts(wallet.provider, "eth_requestAccounts").catch(
+        (error) => {
+          throw createRecoverableEvmError("EVM wallet connection failed.", error);
+        }
+      );
+      const [address] = accounts;
 
       if (!address) {
-        throw new Error("EVM wallet returned no accounts.");
+        throw createRecoverableEvmError("EVM wallet returned no accounts.");
       }
 
       const providerChainId = await wallet.provider.request({ method: "eth_chainId" });
 
-      if (String(providerChainId).toLowerCase() !== numberToHex(options.chainId)) {
-        throw new Error(`EVM wallet is connected to unsupported chain: ${String(providerChainId)}`);
+      if (normalizeProviderChainId(providerChainId) !== numberToHex(options.chainId)) {
+        throw createRecoverableEvmError(
+          `EVM wallet is connected to unsupported chain: ${String(providerChainId)}`
+        );
       }
 
-      const normalized = getAddress(address);
-      const account: Account = {
-        chain,
-        address: normalized,
-        displayAddress: `${normalized.slice(0, 6)}...${normalized.slice(-4)}`,
-        walletId: wallet.id,
-        adapterId
-      };
+      const account = createAccount({ chain, address, wallet, adapterId });
 
       activeWallet = wallet;
       activeAccount = account;
+      await persistWalletConnectSession(wallet, account);
       bindProviderEvents(wallet.provider, wallet, chain, adapterId, emit);
       emit(
         normalizeDolphinEvent({
@@ -136,6 +198,8 @@ export function createEvmAdapter(options: EvmAdapterOptions): ChainAdapter {
     },
     async disconnect() {
       const wallet = activeWallet;
+      await wallet?.walletConnect?.provider.disconnect?.();
+      await clearWalletConnectSession(wallet);
       activeWallet = null;
       activeAccount = null;
       emit(
@@ -148,6 +212,14 @@ export function createEvmAdapter(options: EvmAdapterOptions): ChainAdapter {
       );
     },
     async getAccounts() {
+      if (!activeAccount) {
+        const restored = await restoreWalletConnectAccount();
+
+        if (restored) {
+          return [restored];
+        }
+      }
+
       return activeAccount ? [activeAccount] : [];
     },
     normalizeAddress: (address) => {
@@ -239,10 +311,71 @@ export function createEvmAdapter(options: EvmAdapterOptions): ChainAdapter {
       adapterId,
       chain,
       ...(options.provider ? { provider: options.provider } : {}),
+      ...(options.walletConnect ? { walletConnect: options.walletConnect } : {}),
       ...(options.walletName ? { walletName: options.walletName } : {}),
       ...(options.window ? { window: options.window } : {})
     });
     return discoveredWallets;
+  }
+
+  async function restoreWalletConnectAccount(): Promise<Account | null> {
+    if (
+      !options.walletConnect ||
+      options.walletConnect.restoreSession === false ||
+      restoreAttempted
+    ) {
+      return null;
+    }
+
+    restoreAttempted = true;
+    const snapshot = await readWalletConnectSession(options.walletConnect, adapterId);
+
+    if (!snapshot || snapshot.chainId !== chain.id) {
+      return null;
+    }
+
+    const wallets = discoveredWallets ?? (await discoverAndStoreWallets());
+    const wallet =
+      wallets.find((candidate) => candidate.id === snapshot.walletId) ??
+      wallets.find((candidate) => candidate.walletConnect);
+
+    if (!wallet?.walletConnect) {
+      return null;
+    }
+
+    const accounts = await requestAccounts(wallet.provider, "eth_accounts").catch(() =>
+      wallet.walletConnect?.provider.accounts ? [...wallet.walletConnect.provider.accounts] : []
+    );
+    const address = getAddress(accounts[0] ?? snapshot.address);
+
+    if (address !== getAddress(snapshot.address)) {
+      await clearWalletConnectSession(wallet);
+      return null;
+    }
+
+    const providerChainId = await wallet.provider.request({ method: "eth_chainId" });
+
+    if (normalizeProviderChainId(providerChainId) !== numberToHex(options.chainId)) {
+      await clearWalletConnectSession(wallet);
+      return null;
+    }
+
+    const account = createAccount({ chain, address, wallet, adapterId });
+    activeWallet = wallet;
+    activeAccount = account;
+    bindProviderEvents(wallet.provider, wallet, chain, adapterId, emit);
+    emit(
+      normalizeDolphinEvent({
+        type: "sessionRestored",
+        stage: "session",
+        adapterId,
+        wallet,
+        account,
+        accounts: [account]
+      })
+    );
+
+    return account;
   }
 }
 
@@ -250,11 +383,27 @@ async function discoverEvmWallets(options: {
   readonly adapterId: string;
   readonly chain: Chain;
   readonly provider?: Eip1193Provider;
+  readonly walletConnect?: WalletConnectOptions;
   readonly walletName?: string;
   readonly window?: Eip6963Window;
 }): Promise<readonly DiscoveredEvmWallet[]> {
+  const walletConnectWallets = options.walletConnect
+    ? [
+        createWallet({
+          adapterId: options.adapterId,
+          chain: options.chain,
+          id: "walletconnect",
+          name: options.walletConnect.walletName ?? "WalletConnect",
+          provider: options.walletConnect.provider,
+          ...(options.walletConnect.iconUrl ? { iconUrl: options.walletConnect.iconUrl } : {}),
+          walletConnect: options.walletConnect
+        })
+      ]
+    : [];
+
   if (options.provider) {
     return [
+      ...walletConnectWallets,
       createWallet({
         adapterId: options.adapterId,
         chain: options.chain,
@@ -269,21 +418,25 @@ async function discoverEvmWallets(options: {
   const announced = collectEip6963Providers(target);
 
   if (announced.length > 0) {
-    return announced.map((detail) =>
-      createWallet({
-        adapterId: options.adapterId,
-        chain: options.chain,
-        id: detail.info.uuid,
-        name: detail.info.name,
-        provider: detail.provider,
-        ...(detail.info.icon ? { iconUrl: detail.info.icon } : {}),
-        ...(detail.info.rdns ? { homepageUrl: detail.info.rdns } : {})
-      })
-    );
+    return [
+      ...walletConnectWallets,
+      ...announced.map((detail) =>
+        createWallet({
+          adapterId: options.adapterId,
+          chain: options.chain,
+          id: detail.info.uuid,
+          name: detail.info.name,
+          provider: detail.provider,
+          ...(detail.info.icon ? { iconUrl: detail.info.icon } : {}),
+          ...(detail.info.rdns ? { homepageUrl: detail.info.rdns } : {})
+        })
+      )
+    ];
   }
 
   if (target?.ethereum) {
     return [
+      ...walletConnectWallets,
       createWallet({
         adapterId: options.adapterId,
         chain: options.chain,
@@ -294,7 +447,7 @@ async function discoverEvmWallets(options: {
     ];
   }
 
-  return [];
+  return walletConnectWallets;
 }
 
 function collectEip6963Providers(
@@ -327,6 +480,7 @@ function createWallet(options: {
   readonly provider: Eip1193Provider;
   readonly iconUrl?: string;
   readonly homepageUrl?: string;
+  readonly walletConnect?: WalletConnectOptions;
 }): DiscoveredEvmWallet {
   return {
     id: options.id,
@@ -336,8 +490,58 @@ function createWallet(options: {
     installed: true,
     capabilities: ["connect", "disconnect", "sign-message", "sign-siwx-message", "events"],
     provider: options.provider,
+    ...(options.walletConnect
+      ? {
+          walletConnect: options.walletConnect,
+          metadata: {
+            walletConnect: true,
+            ...(options.walletConnect.mobileDeepLinks
+              ? { mobileDeepLinks: options.walletConnect.mobileDeepLinks }
+              : {})
+          }
+        }
+      : {}),
     ...(options.iconUrl ? { iconUrl: options.iconUrl } : {}),
     ...(options.homepageUrl ? { homepageUrl: options.homepageUrl } : {})
+  };
+}
+
+export function createWalletConnectDeepLink(
+  wallet: MobileWalletDeepLink,
+  walletConnectUri: string,
+  options: { readonly preferUniversal?: boolean } = {}
+): string {
+  const base = options.preferUniversal
+    ? (wallet.universalUrl ?? wallet.nativeUrl)
+    : (wallet.nativeUrl ?? wallet.universalUrl);
+
+  if (!base) {
+    throw new Error(`Wallet ${wallet.name} does not define a deep link URL.`);
+  }
+
+  const encodedUri = encodeURIComponent(walletConnectUri);
+
+  if (base.includes("{uri}")) {
+    return base.replace("{uri}", encodedUri);
+  }
+
+  return `${base}${base.includes("?") ? "&" : "?"}uri=${encodedUri}`;
+}
+
+function createAccount(input: {
+  readonly chain: Chain;
+  readonly address: string;
+  readonly wallet: Wallet;
+  readonly adapterId: string;
+}): Account {
+  const normalized = getAddress(input.address);
+
+  return {
+    chain: input.chain,
+    address: normalized,
+    displayAddress: `${normalized.slice(0, 6)}...${normalized.slice(-4)}`,
+    walletId: input.wallet.id,
+    adapterId: input.adapterId
   };
 }
 
@@ -399,6 +603,126 @@ function assertStringArray(value: unknown, label: string): readonly string[] {
   }
 
   return value;
+}
+
+async function requestAccounts(
+  provider: Eip1193Provider,
+  method: string
+): Promise<readonly string[]> {
+  return assertStringArray(await provider.request({ method }), method);
+}
+
+function normalizeProviderChainId(chainId: unknown): string {
+  if (typeof chainId === "number") {
+    return numberToHex(chainId);
+  }
+
+  if (typeof chainId === "string" && !chainId.startsWith("0x")) {
+    const parsed = Number(chainId);
+
+    if (Number.isFinite(parsed)) {
+      return numberToHex(parsed);
+    }
+  }
+
+  return String(chainId).toLowerCase();
+}
+
+function createRecoverableEvmError(message: string, cause?: unknown): Error {
+  return Object.assign(new Error(message, { cause }), {
+    code: "WALLET_CONNECTION_FAILED",
+    stage: "wallet-connection",
+    recoverable: true
+  });
+}
+
+async function persistWalletConnectSession(
+  wallet: DiscoveredEvmWallet,
+  account: Account
+): Promise<void> {
+  const storage = wallet.walletConnect?.sessionStorage;
+
+  if (!storage) {
+    return;
+  }
+
+  await storage.setItem(
+    wallet.walletConnect.sessionStorageKey ?? walletConnectStorageKey(wallet.adapterId),
+    JSON.stringify({
+      walletId: wallet.id,
+      address: account.address,
+      chainId: account.chain.id,
+      connectedAt: createIsoTimestamp()
+    })
+  );
+}
+
+async function clearWalletConnectSession(wallet: DiscoveredEvmWallet | null): Promise<void> {
+  const storage = wallet?.walletConnect?.sessionStorage;
+
+  if (!storage) {
+    return;
+  }
+
+  await storage.removeItem(
+    wallet.walletConnect?.sessionStorageKey ?? walletConnectStorageKey(wallet.adapterId)
+  );
+}
+
+async function readWalletConnectSession(
+  walletConnect: WalletConnectOptions,
+  adapterId: string
+): Promise<WalletConnectSessionSnapshot | null> {
+  const storage = walletConnect.sessionStorage;
+
+  if (!storage) {
+    return null;
+  }
+
+  const key = walletConnect.sessionStorageKey ?? walletConnectStorageKey(adapterId);
+  const raw = await storage.getItem(key);
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return parseWalletConnectSession(raw);
+  } catch {
+    await storage.removeItem(key);
+    return null;
+  }
+}
+
+function walletConnectStorageKey(adapterId: string): string {
+  return `dolphin-id:${adapterId}:walletconnect`;
+}
+
+interface WalletConnectSessionSnapshot {
+  readonly walletId: string;
+  readonly address: string;
+  readonly chainId: string;
+  readonly connectedAt: string;
+}
+
+function parseWalletConnectSession(raw: string): WalletConnectSessionSnapshot {
+  const parsed = JSON.parse(raw) as Partial<WalletConnectSessionSnapshot>;
+
+  if (
+    typeof parsed.walletId !== "string" ||
+    typeof parsed.address !== "string" ||
+    typeof parsed.chainId !== "string" ||
+    typeof parsed.connectedAt !== "string"
+  ) {
+    throw new Error("Invalid WalletConnect session snapshot.");
+  }
+
+  return {
+    walletId: parsed.walletId,
+    address: parsed.address,
+    chainId: parsed.chainId,
+    connectedAt: parsed.connectedAt
+  };
 }
 
 function messageToString(message: string | Uint8Array): string {
