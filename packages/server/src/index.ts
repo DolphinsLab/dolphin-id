@@ -257,6 +257,16 @@ export interface JwtSession {
   readonly expiresInSeconds: number;
 }
 
+export interface VerifiedJwtSession extends JwtSession {
+  readonly claims: Readonly<Record<string, unknown>>;
+}
+
+export interface VerifyJwtSessionOptions {
+  readonly token: string;
+  readonly secret: string;
+  readonly now?: Date;
+}
+
 export function issueJwtSession(options: JwtSessionOptions): JwtSession {
   const now = options.now ?? new Date();
   const expiresInSeconds = options.expiresInSeconds ?? DEFAULT_SESSION_TTL_SECONDS;
@@ -278,6 +288,46 @@ export function issueJwtSession(options: JwtSessionOptions): JwtSession {
     issuedAt: now,
     expiresAt,
     expiresInSeconds
+  };
+}
+
+export function verifyJwtSession(options: VerifyJwtSessionOptions): VerifiedJwtSession {
+  const [encodedHeader, encodedPayload, signature] = options.token.split(".");
+
+  if (!encodedHeader || !encodedPayload || !signature) {
+    throw new Error("Invalid JWT.");
+  }
+
+  const expectedSignature = createHmac("sha256", options.secret)
+    .update(`${encodedHeader}.${encodedPayload}`)
+    .digest("base64url");
+
+  assertTimingSafeEqual(signature, expectedSignature, "JWT signature invalid.");
+
+  const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as Readonly<
+    Record<string, unknown>
+  >;
+  const subject = typeof payload?.sub === "string" ? payload.sub : undefined;
+  const issuedAtSeconds = typeof payload?.iat === "number" ? payload.iat : undefined;
+  const expiresAtSeconds = typeof payload?.exp === "number" ? payload.exp : undefined;
+
+  if (!subject || issuedAtSeconds === undefined || expiresAtSeconds === undefined) {
+    throw new Error("JWT payload invalid.");
+  }
+
+  const now = options.now ?? new Date();
+
+  if (expiresAtSeconds * 1000 <= now.getTime()) {
+    throw new Error("JWT expired.");
+  }
+
+  return {
+    subject,
+    token: options.token,
+    issuedAt: new Date(issuedAtSeconds * 1000),
+    expiresAt: new Date(expiresAtSeconds * 1000),
+    expiresInSeconds: expiresAtSeconds - issuedAtSeconds,
+    claims: payload
   };
 }
 
@@ -379,6 +429,91 @@ export interface ServerAuth {
   issueSession(user: User, options?: { readonly now?: Date }): JwtSession;
 }
 
+export interface AuthRouteRequest {
+  readonly body?: unknown;
+  readonly cookies?: Readonly<Record<string, string | undefined>>;
+  readonly headers?: Readonly<Record<string, string | undefined>>;
+  readonly now?: Date;
+}
+
+export interface AuthRouteResponse {
+  readonly status: number;
+  readonly body: Readonly<Record<string, unknown>>;
+  readonly cookies?: readonly AuthRouteCookie[];
+}
+
+export interface AuthRouteCookie {
+  readonly name: string;
+  readonly value: string;
+  readonly options: SessionCookieOptions;
+}
+
+export interface AuthRouteHandlersOptions {
+  readonly auth: ServerAuth;
+  readonly jwtSecret: string;
+  readonly cookieName?: string;
+  readonly cookie?: Omit<SessionCookieOptionsInput, "name" | "expires">;
+}
+
+export interface AuthRouteHandlers {
+  nonce(request: AuthRouteRequest): Promise<AuthRouteResponse>;
+  verify(request: AuthRouteRequest): Promise<AuthRouteResponse>;
+  me(request: AuthRouteRequest): Promise<AuthRouteResponse>;
+  logout(): Promise<AuthRouteResponse>;
+  requireSession(request: AuthRouteRequest): Promise<VerifiedJwtSession>;
+}
+
+export interface ExpressLikeRequest extends AuthRouteRequest {
+  dolphinSession?: VerifiedJwtSession;
+}
+
+export interface ExpressLikeResponse {
+  status(code: number): ExpressLikeResponse;
+  json(body: unknown): unknown;
+  cookie?(name: string, value: string, options: Readonly<Record<string, unknown>>): unknown;
+  clearCookie?(name: string, options?: Readonly<Record<string, unknown>>): unknown;
+}
+
+export type ExpressLikeNext = (error?: unknown) => void;
+
+export interface ExpressAuthRoutes {
+  nonce(request: ExpressLikeRequest, response: ExpressLikeResponse): Promise<void>;
+  verify(request: ExpressLikeRequest, response: ExpressLikeResponse): Promise<void>;
+  me(request: ExpressLikeRequest, response: ExpressLikeResponse): Promise<void>;
+  logout(request: ExpressLikeRequest, response: ExpressLikeResponse): Promise<void>;
+  requireSession(
+    request: ExpressLikeRequest,
+    response: ExpressLikeResponse,
+    next: ExpressLikeNext
+  ): Promise<void>;
+}
+
+export interface FastifyLikeReply {
+  code(statusCode: number): FastifyLikeReply;
+  send(body: unknown): unknown;
+  setCookie?(name: string, value: string, options: Readonly<Record<string, unknown>>): unknown;
+  clearCookie?(name: string, options?: Readonly<Record<string, unknown>>): unknown;
+}
+
+export interface FastifyLikeRequest extends AuthRouteRequest {
+  dolphinSession?: VerifiedJwtSession;
+}
+
+export interface FastifyLikeInstance {
+  post(
+    path: string,
+    handler: (request: FastifyLikeRequest, reply: FastifyLikeReply) => unknown
+  ): void;
+  get(
+    path: string,
+    handler: (request: FastifyLikeRequest, reply: FastifyLikeReply) => unknown
+  ): void;
+}
+
+export interface FastifyAuthPluginOptions extends AuthRouteHandlersOptions {
+  readonly prefix?: string;
+}
+
 export function createServerAuth(options: ServerAuthOptions): ServerAuth {
   validateServerAuthSecurity(options);
 
@@ -459,6 +594,146 @@ export function createServerAuth(options: ServerAuthOptions): ServerAuth {
       });
     }
   };
+}
+
+export function createAuthRouteHandlers(options: AuthRouteHandlersOptions): AuthRouteHandlers {
+  const cookieName = options.cookieName ?? "dolphin_session";
+  const requireSession = async (request: AuthRouteRequest): Promise<VerifiedJwtSession> => {
+    const token = readSessionToken(request, cookieName);
+
+    if (!token) {
+      throw new Error("Unauthorized.");
+    }
+
+    return verifyJwtSession({
+      token,
+      secret: options.jwtSecret,
+      ...(request.now ? { now: request.now } : {})
+    });
+  };
+
+  return {
+    async nonce(request) {
+      const body = readBodyRecord(request.body);
+      const domain = readString(body.domain);
+      const address = readString(body.address);
+      const chainType = readString(body.chainType);
+      const walletName = readString(body.walletName);
+      const nonce = await options.auth.issueNonce({
+        purpose: readString(body.purpose) ?? "sign-in",
+        ...(domain ? { domain } : {}),
+        ...(address ? { address } : {}),
+        ...(chainType ? { chainType } : {}),
+        ...(walletName ? { walletName } : {}),
+        ...(request.now ? { now: request.now } : {})
+      });
+
+      return {
+        status: 200,
+        body: {
+          nonce: nonce.nonce,
+          expiresAt: nonce.expiresAt.toISOString()
+        }
+      };
+    },
+    async verify(request) {
+      const result = await options.auth.verifySignIn({
+        ...readVerifySignInRequest(request.body),
+        ...(request.now ? { now: request.now } : {})
+      });
+      const cookieOptions = createSessionCookieOptions({
+        ...(options.cookie ?? {}),
+        name: cookieName,
+        expires: result.session.expiresAt
+      });
+
+      return {
+        status: 200,
+        body: {
+          session: result.session,
+          user: result.user,
+          verification: result.verification
+        },
+        cookies: [
+          {
+            name: cookieOptions.name,
+            value: result.session.token,
+            options: cookieOptions
+          }
+        ]
+      };
+    },
+    async me(request) {
+      const session = await requireSession(request);
+      return {
+        status: 200,
+        body: { session }
+      };
+    },
+    async logout() {
+      return {
+        status: 200,
+        body: { ok: true },
+        cookies: [
+          {
+            name: cookieName,
+            value: "",
+            options: createSessionCookieOptions({
+              ...(options.cookie ?? {}),
+              name: cookieName,
+              maxAgeSeconds: 0
+            })
+          }
+        ]
+      };
+    },
+    requireSession
+  };
+}
+
+export function createExpressAuthRoutes(options: AuthRouteHandlersOptions): ExpressAuthRoutes {
+  const handlers = createAuthRouteHandlers(options);
+
+  return {
+    nonce: async (request, response) =>
+      sendExpressResponse(response, await handlers.nonce(request)),
+    verify: async (request, response) =>
+      sendExpressResponse(response, await handlers.verify(request)),
+    me: async (request, response) => sendExpressResponse(response, await handlers.me(request)),
+    logout: async (_request, response) => sendExpressResponse(response, await handlers.logout()),
+    requireSession: async (request, response, next) => {
+      try {
+        request.dolphinSession = await handlers.requireSession(request);
+        next();
+      } catch (error) {
+        sendExpressResponse(response, {
+          status: 401,
+          body: { error: error instanceof Error ? error.message : "Unauthorized." }
+        });
+      }
+    }
+  };
+}
+
+export function registerFastifyAuthRoutes(
+  fastify: FastifyLikeInstance,
+  options: FastifyAuthPluginOptions
+): void {
+  const handlers = createAuthRouteHandlers(options);
+  const prefix = options.prefix ?? "/auth";
+
+  fastify.post(`${prefix}/nonce`, async (request, reply) =>
+    sendFastifyResponse(reply, await handlers.nonce(request))
+  );
+  fastify.post(`${prefix}/verify`, async (request, reply) =>
+    sendFastifyResponse(reply, await handlers.verify(request))
+  );
+  fastify.get(`${prefix}/me`, async (request, reply) =>
+    sendFastifyResponse(reply, await handlers.me(request))
+  );
+  fastify.post(`${prefix}/logout`, async (_request, reply) =>
+    sendFastifyResponse(reply, await handlers.logout())
+  );
 }
 
 export function isNonceExpired(
@@ -698,6 +973,85 @@ function accountFromSiwxMessage(message: SiwxMessage): UserAccount {
     chainType: message.chainType,
     chainId: message.chainId,
     address: normalizeAddress(message.address)
+  };
+}
+
+function readBodyRecord(body: unknown): Record<string, unknown> {
+  return typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function readVerifySignInRequest(body: unknown): VerifySignInRequest {
+  const record = readBodyRecord(body);
+
+  if (
+    typeof record.nonce !== "string" ||
+    typeof record.signature !== "string" ||
+    typeof record.message !== "object" ||
+    record.message === null
+  ) {
+    throw new Error("Invalid verify request.");
+  }
+
+  return {
+    nonce: record.nonce,
+    signature: record.signature,
+    message: record.message as SiwxMessage
+  };
+}
+
+function readSessionToken(request: AuthRouteRequest, cookieName: string): string | undefined {
+  const cookieToken = request.cookies?.[cookieName];
+
+  if (cookieToken) {
+    return cookieToken;
+  }
+
+  const authorization = request.headers?.authorization ?? request.headers?.Authorization;
+
+  if (!authorization?.startsWith("Bearer ")) {
+    return undefined;
+  }
+
+  return authorization.slice("Bearer ".length);
+}
+
+function sendExpressResponse(
+  response: ExpressLikeResponse,
+  routeResponse: AuthRouteResponse
+): void {
+  routeResponse.cookies?.forEach((cookie) => {
+    if (cookie.value) {
+      response.cookie?.(cookie.name, cookie.value, cookieOptionsToRecord(cookie.options));
+    } else {
+      response.clearCookie?.(cookie.name, cookieOptionsToRecord(cookie.options));
+    }
+  });
+  response.status(routeResponse.status).json(routeResponse.body);
+}
+
+function sendFastifyResponse(reply: FastifyLikeReply, routeResponse: AuthRouteResponse): void {
+  routeResponse.cookies?.forEach((cookie) => {
+    if (cookie.value) {
+      reply.setCookie?.(cookie.name, cookie.value, cookieOptionsToRecord(cookie.options));
+    } else {
+      reply.clearCookie?.(cookie.name, cookieOptionsToRecord(cookie.options));
+    }
+  });
+  reply.code(routeResponse.status).send(routeResponse.body);
+}
+
+function cookieOptionsToRecord(options: SessionCookieOptions): Readonly<Record<string, unknown>> {
+  return {
+    httpOnly: options.httpOnly,
+    secure: options.secure,
+    sameSite: options.sameSite,
+    path: options.path,
+    ...(options.expires ? { expires: options.expires } : {}),
+    ...(options.maxAgeSeconds !== undefined ? { maxAge: options.maxAgeSeconds } : {})
   };
 }
 

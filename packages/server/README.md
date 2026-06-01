@@ -13,6 +13,14 @@ address-as-user lookup, and JWT session issuing.
 - `InMemoryUserRepository` supports address-as-user lookup and creation.
 - `issueJwtSession` issues HS256 JWT sessions. The default expiration is seven
   days and can be overridden with `sessionTtlSeconds` or `expiresInSeconds`.
+- `verifyJwtSession` verifies HS256 session JWTs and rejects tampered or expired
+  tokens.
+- `createAuthRouteHandlers` provides framework-neutral handlers for nonce,
+  verify, me, logout, and authenticated route protection.
+- `createExpressAuthRoutes` adapts the handlers to Express-like request and
+  response objects.
+- `registerFastifyAuthRoutes` registers the reference auth routes on a
+  Fastify-like instance.
 
 Production apps should provide a chain-specific `verifySiwx` implementation from
 the relevant adapter slice. The default verifier only rejects missing signatures
@@ -43,3 +51,18 @@ nonce, expiration, and the personal-message signature.
 Use `verifyEvmSiweMessage` as the `verifySiwx` implementation for EVM sign-in.
 It validates chain type, domain, address, chain ID, nonce, expiration, and the
 `personal_sign` signature over the SIWE message.
+
+## Express And Fastify Helpers
+
+```ts
+import { createExpressAuthRoutes, registerFastifyAuthRoutes } from "@dolphin-id/server";
+
+const expressRoutes = createExpressAuthRoutes({ auth, jwtSecret });
+app.post("/auth/nonce", expressRoutes.nonce);
+app.post("/auth/verify", expressRoutes.verify);
+app.get("/auth/me", expressRoutes.me);
+app.post("/auth/logout", expressRoutes.logout);
+app.get("/private", expressRoutes.requireSession, privateHandler);
+
+registerFastifyAuthRoutes(fastify, { auth, jwtSecret, prefix: "/auth" });
+```

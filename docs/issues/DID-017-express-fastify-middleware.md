@@ -10,11 +10,20 @@ Provide Express and Fastify middleware/helpers for nonce, verify, me, logout, an
 
 ## Acceptance criteria
 
-- [ ] Express helper exposes reference auth routes.
-- [ ] Fastify helper exposes reference auth routes.
-- [ ] Middleware can require a valid Dolphin ID session.
-- [ ] Examples demonstrate both frameworks.
-- [ ] Tests cover success and unauthorized requests.
+- [x] Express helper exposes reference auth routes.
+- [x] Fastify helper exposes reference auth routes.
+- [x] Middleware can require a valid Dolphin ID session.
+- [x] Examples demonstrate both frameworks.
+- [x] Tests cover success and unauthorized requests.
+
+## Implementation notes
+
+- Added framework-neutral auth route handlers for nonce, verify, me, logout, and
+  session-protected routes.
+- Added `verifyJwtSession` for HS256 session verification.
+- Added Express-like route adapters and Fastify-like route registration helpers.
+- Added README examples and tests covering successful route flow, unauthorized
+  protection, and Fastify route registration.
 
 ## Blocked by
 

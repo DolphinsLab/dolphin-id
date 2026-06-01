@@ -56,8 +56,13 @@ hooks.
 - `RedisNonceStore`: Redis-like nonce store adapter.
 - `InMemoryUserRepository`: address-as-user repository.
 - `issueJwtSession`: HS256 JWT issuing with configurable TTL.
+- `verifyJwtSession`: HS256 JWT verification for session-protected routes.
 - `verifyEvmSiweMessage`: verifies EVM EIP-4361 SIWE messages.
 - `verifySuiPersonalMessage`: verifies Sui personal-message signatures.
+- `createAuthRouteHandlers`: framework-neutral nonce, verify, me, logout, and
+  require-session handlers.
+- `createExpressAuthRoutes`: Express-like route handlers for the auth flow.
+- `registerFastifyAuthRoutes`: Fastify-like registration helper for auth routes.
 - `createSessionCookieOptions`: cookie defaults and production safety checks.
 - `assertProductionSafeUrl`: rejects production HTTP origins unless explicitly
   overridden.
