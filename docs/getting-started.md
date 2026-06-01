@@ -1,13 +1,13 @@
 # Getting Started
 
-This guide wires Dolphin ID into a React app with EVM and Sui login, default UI,
-and self-hosted auth endpoints.
+This guide wires Dolphin ID into a React app with EVM, Sui, and Solana login,
+default UI, and self-hosted auth endpoints.
 
 ## Install
 
 ```bash
 pnpm add @dolphin-id/core @dolphin-id/react @dolphin-id/ui
-pnpm add @dolphin-id/adapter-evm @dolphin-id/adapter-sui
+pnpm add @dolphin-id/adapter-evm @dolphin-id/adapter-sui @dolphin-id/adapter-solana
 pnpm add @dolphin-id/server
 ```
 
@@ -15,11 +15,13 @@ pnpm add @dolphin-id/server
 
 ```ts
 import { createEvmAdapter } from "@dolphin-id/adapter-evm";
+import { createSolanaAdapter } from "@dolphin-id/adapter-solana";
 import { createSuiAdapter } from "@dolphin-id/adapter-sui";
 
 export const adapters = [
   createEvmAdapter({ chainId: 1, chainName: "Ethereum" }),
-  createSuiAdapter({ network: "testnet" })
+  createSuiAdapter({ network: "testnet" }),
+  createSolanaAdapter({ network: "devnet" })
 ];
 ```
 
@@ -75,6 +77,7 @@ export function SignInButton() {
 import {
   createServerAuth,
   verifyEvmSiweMessage,
+  verifySolanaSiwsMessage,
   verifySuiPersonalMessage
 } from "@dolphin-id/server";
 
@@ -93,6 +96,13 @@ export const auth = createServerAuth({
     if (request.message.chainType === "sui") {
       return verifySuiPersonalMessage(request, {
         expectedChainId: "testnet"
+      });
+    }
+
+    if (request.message.chainType === "solana") {
+      return verifySolanaSiwsMessage(request, {
+        expectedDomain: "example.com",
+        expectedChainId: "devnet"
       });
     }
 
@@ -124,4 +134,5 @@ pnpm --filter @dolphin-id/example-next test
 
 The example includes mocked EVM and Sui wallets, the default `@dolphin-id/ui`
 components, self-hosted auth routes, and Playwright E2E coverage for refresh
-session recovery.
+session recovery. Add `createSolanaAdapter` to the same adapter array when a
+Solana wallet registry is available in the browser.

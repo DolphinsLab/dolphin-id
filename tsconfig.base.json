@@ -9,6 +9,7 @@
       "@dolphin-id/react": ["packages/react/src/index.tsx"],
       "@dolphin-id/ui": ["packages/ui/src/index.tsx"],
       "@dolphin-id/adapter-evm": ["packages/adapter-evm/src/index.ts"],
+      "@dolphin-id/adapter-solana": ["packages/adapter-solana/src/index.ts"],
       "@dolphin-id/adapter-sui": ["packages/adapter-sui/src/index.ts"],
       "@dolphin-id/server": ["packages/server/src/index.ts"]
     },

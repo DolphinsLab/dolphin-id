@@ -68,6 +68,9 @@ importers:
       "@dolphin-id/adapter-evm":
         specifier: workspace:*
         version: link:../../packages/adapter-evm
+      "@dolphin-id/adapter-solana":
+        specifier: workspace:*
+        version: link:../../packages/adapter-solana
       "@dolphin-id/adapter-sui":
         specifier: workspace:*
         version: link:../../packages/adapter-sui
@@ -115,6 +118,19 @@ importers:
         specifier: ^2.51.3
         version: 2.51.3(typescript@5.9.3)
 
+  packages/adapter-solana:
+    dependencies:
+      "@dolphin-id/core":
+        specifier: workspace:*
+        version: link:../core
+      "@scure/base":
+        specifier: ^1.2.6
+        version: 1.2.6
+    devDependencies:
+      "@noble/curves":
+        specifier: ^1.9.1
+        version: 1.9.1
+
   packages/adapter-sui:
     dependencies:
       "@dolphin-id/core":
@@ -145,6 +161,12 @@ importers:
       "@mysten/sui":
         specifier: ^2.17.0
         version: 2.17.0(typescript@5.9.3)
+      "@noble/curves":
+        specifier: ^1.9.1
+        version: 1.9.1
+      "@scure/base":
+        specifier: ^1.2.6
+        version: 1.2.6
       viem:
         specifier: ^2.51.3
         version: 2.51.3(typescript@5.9.3)

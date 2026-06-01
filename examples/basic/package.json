@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@dolphin-id/adapter-evm": "workspace:*",
+    "@dolphin-id/adapter-solana": "workspace:*",
     "@dolphin-id/adapter-sui": "workspace:*"
   }
 }

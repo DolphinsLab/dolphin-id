@@ -1,4 +1,6 @@
+import { ed25519 } from "@noble/curves/ed25519";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
+import { base58 } from "@scure/base";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 
@@ -16,6 +18,7 @@ import {
   registerFastifyAuthRoutes,
   verifyJwtSession,
   verifyEvmSiweMessage,
+  verifySolanaSiwsMessage,
   verifySuiPersonalMessage,
   type RedisNonceClient
 } from "./index";
@@ -687,6 +690,141 @@ describe("verifySuiPersonalMessage", () => {
   });
 });
 
+describe("verifySolanaSiwsMessage", () => {
+  const issuedAt = new Date("2026-01-01T00:00:00.000Z");
+
+  async function signIn(
+    overrides: {
+      readonly domain?: string;
+      readonly nonceNow?: Date;
+      readonly signature?: string;
+      readonly expirationTime?: Date;
+    } = {}
+  ) {
+    const privateKey = ed25519.utils.randomPrivateKey();
+    const publicKey = ed25519.getPublicKey(privateKey);
+    const address = base58.encode(publicKey);
+    const auth = createServerAuth({
+      jwtSecret: "secret",
+      verifySiwx: (request) =>
+        verifySolanaSiwsMessage(request, {
+          expectedDomain: "example.com",
+          expectedAddress: address,
+          expectedChainId: "devnet",
+          now: issuedAt
+        })
+    });
+    const nonce = await auth.issueNonce({
+      now: overrides.nonceNow ?? issuedAt,
+      domain: "example.com",
+      chainType: "solana",
+      address
+    });
+    const expirationTime = overrides.expirationTime ?? new Date("2026-01-01T00:05:00.000Z");
+    const message = {
+      format: "caip122",
+      chainType: "solana",
+      domain: overrides.domain ?? "example.com",
+      address,
+      uri: "https://example.com/login",
+      version: "1",
+      chainId: "devnet",
+      nonce: nonce.nonce,
+      issuedAt: issuedAt.toISOString(),
+      expirationTime: expirationTime.toISOString(),
+      raw: solanaRawMessage({
+        domain: overrides.domain ?? "example.com",
+        address,
+        chainId: "devnet",
+        nonce: nonce.nonce,
+        issuedAt,
+        expirationTime
+      })
+    } as const;
+    const signature =
+      overrides.signature ??
+      base58.encode(ed25519.sign(new TextEncoder().encode(message.raw), privateKey));
+
+    return auth.verifySignIn({
+      now: issuedAt,
+      nonce: nonce.nonce,
+      signature,
+      message
+    });
+  }
+
+  it("accepts a valid Solana SIWS sign-in", async () => {
+    await expect(signIn()).resolves.toMatchObject({
+      verification: { ok: true },
+      user: {
+        accounts: [
+          {
+            chainType: "solana",
+            chainId: "devnet"
+          }
+        ]
+      }
+    });
+  });
+
+  it("rejects an invalid Solana signature", async () => {
+    await expect(signIn({ signature: base58.encode(new Uint8Array(64)) })).rejects.toThrow(
+      "Solana signature is invalid"
+    );
+  });
+
+  it("rejects the wrong Solana domain", async () => {
+    await expect(signIn({ domain: "evil.example" })).rejects.toThrow("Nonce domain mismatch");
+  });
+
+  it("rejects replayed Solana nonce", async () => {
+    const privateKey = ed25519.utils.randomPrivateKey();
+    const publicKey = ed25519.getPublicKey(privateKey);
+    const address = base58.encode(publicKey);
+    const auth = createServerAuth({
+      jwtSecret: "secret",
+      verifySiwx: (request) => verifySolanaSiwsMessage(request, { now: issuedAt })
+    });
+    const nonce = await auth.issueNonce({
+      now: issuedAt,
+      domain: "example.com",
+      chainType: "solana",
+      address
+    });
+    const raw = solanaRawMessage({
+      domain: "example.com",
+      address,
+      chainId: "devnet",
+      nonce: nonce.nonce,
+      issuedAt,
+      expirationTime: new Date("2026-01-01T00:05:00.000Z")
+    });
+    const request = {
+      now: issuedAt,
+      nonce: nonce.nonce,
+      signature: base58.encode(ed25519.sign(new TextEncoder().encode(raw), privateKey)),
+      message: {
+        format: "caip122",
+        chainType: "solana",
+        domain: "example.com",
+        address,
+        uri: "https://example.com/login",
+        version: "1",
+        chainId: "devnet",
+        nonce: nonce.nonce,
+        issuedAt: issuedAt.toISOString(),
+        expirationTime: "2026-01-01T00:05:00.000Z",
+        raw
+      } as const
+    };
+
+    await expect(auth.verifySignIn(request)).resolves.toMatchObject({
+      verification: { ok: true }
+    });
+    await expect(auth.verifySignIn(request)).rejects.toThrow("Nonce not_found");
+  });
+});
+
 function createExpressResponse() {
   return {
     statusCode: 200,
@@ -706,4 +844,25 @@ function createExpressResponse() {
       this.cookies.push({ name, value: "", options });
     }
   };
+}
+
+function solanaRawMessage(input: {
+  readonly domain: string;
+  readonly address: string;
+  readonly chainId: string;
+  readonly nonce: string;
+  readonly issuedAt: Date;
+  readonly expirationTime: Date;
+}): string {
+  return [
+    `${input.domain} wants you to sign in with your Solana account:`,
+    input.address,
+    "",
+    "URI: https://example.com/login",
+    "Version: 1",
+    `Chain ID: solana:${input.chainId}`,
+    `Nonce: ${input.nonce}`,
+    `Issued At: ${input.issuedAt.toISOString()}`,
+    `Expiration Time: ${input.expirationTime.toISOString()}`
+  ].join("\n");
 }
