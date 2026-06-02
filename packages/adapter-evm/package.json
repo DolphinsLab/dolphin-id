@@ -1,6 +1,7 @@
 {
   "name": "@dolphin-id/adapter-evm",
   "version": "1.0.0",
+  "license": "Apache-2.0",
   "description": "EVM adapter package for Dolphin ID.",
   "type": "module",
   "sideEffects": false,

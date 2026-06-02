@@ -1,72 +1,52 @@
 # Dolphin ID
 
-Multi-chain Web3 login for React apps, self-hosted auth servers, and adapter
-authors.
+[![CI](https://github.com/DolphinsLab/dolphin-id/actions/workflows/ci.yml/badge.svg)](https://github.com/DolphinsLab/dolphin-id/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-Dolphin ID is a TypeScript monorepo for SIWX-style wallet authentication across
-EVM, Sui, Solana, Bitcoin, and Aptos. It includes chain-neutral contracts,
-React hooks, optional default UI, server-side nonce/session primitives, a CLI
-scaffolder, a hosted-service primitive layer, runnable examples, and Go/Rust/
-Python verification helpers.
+Multi-chain Web3 login for React apps, self-hosted auth servers, and wallet
+adapter authors.
 
-The current repository scope is `v1.0.0`, released on 2026-06-01. See
-[`docs/releases/v1.0.0.md`](docs/releases/v1.0.0.md) for the release notes.
+Dolphin ID is a TypeScript monorepo for SIWX-style authentication across EVM,
+Sui, Solana, Bitcoin, and Aptos. SIWX ("Sign-In With X") generalizes
+[EIP-4361 / Sign-In With Ethereum](https://eips.ethereum.org/EIPS/eip-4361) to
+every supported chain. It provides chain-neutral adapter contracts,
+React hooks, optional default UI, self-hosted server auth primitives, CLI app
+scaffolding, hosted-service primitives, runnable examples, and Go/Rust/Python
+verification helpers.
 
-## Contents
+Current scope: `v1.0.0`, released on 2026-06-01. Read the
+[v1.0.0 release notes](docs/releases/v1.0.0.md) for the full release scope.
 
-- [Why Dolphin ID](#why-dolphin-id)
-- [Packages](#packages)
-- [Install](#install)
-- [Quick Start](#quick-start)
-- [CLI Scaffolder](#cli-scaffolder)
-- [Examples](#examples)
-- [Development](#development)
-- [Documentation](#documentation)
-- [Security](#security)
-- [License](#license)
+<!-- TODO: Add a screenshot or GIF of the default ConnectButton / sign-in flow here, and a live demo link if apps/docs is deployed. A visual is high value for a UI-bearing login library. -->
 
-## Why Dolphin ID
+## At A Glance
 
-- One adapter contract for wallet discovery, connection, account normalization,
-  SIWX message creation, signing, and lifecycle events.
-- React integration that can be used headlessly or with default connection UI.
-- Self-hosted Node.js auth primitives for nonces, SIWX verification, JWT
-  sessions, refresh-token rotation, account binding, and forced logout.
-- Chain adapters for EVM SIWE, Sui personal messages, Solana SIWS, Bitcoin
-  P2PKH SIWX, and Aptos Ed25519 SIWX.
-- Express-like and Fastify-like route helpers for server integrations.
-- Optional hosted nonce/session service primitives with project API keys,
-  allowed domains, quotas, billing hooks, and audit logs.
-- Go, Rust, and Python server SDK parity helpers for EVM, Sui, and HS256
-  session verification.
+| Need                              | Start here                                                                                                       |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Add wallet login to a React app   | [`@dolphin-id/react`](packages/react) with adapters and optional [`@dolphin-id/ui`](packages/ui)                 |
+| Run auth on your own server       | [`@dolphin-id/server`](packages/server) and the [security guide](docs/security.md)                               |
+| Scaffold a Next.js integration    | [`dolphin-id create`](docs/cli.md)                                                                               |
+| Build a third-party chain adapter | [Adapter specification](docs/adapter-spec.md) and [`examples/adapter-third-party`](examples/adapter-third-party) |
+| Verify sessions outside Node.js   | [Go/Rust/Python server SDKs](docs/server-sdks.md)                                                                |
+| Try the complete browser flow     | [`examples/next`](examples/next)                                                                                 |
 
-## Packages
+## Supported Chains
 
-| Path                           | Package                                   | Purpose                                                                                    |
-| ------------------------------ | ----------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `packages/core`                | `@dolphin-id/core`                        | Chain-neutral contracts, SIWX types, events, errors, and shared state                      |
-| `packages/react`               | `@dolphin-id/react`                       | `DolphinProvider`, headless hooks, auth client integration, and session state              |
-| `packages/ui`                  | `@dolphin-id/ui`                          | Optional `ConnectButton`, `WalletModal`, `AccountDisplay`, themes, and locales             |
-| `packages/server`              | `@dolphin-id/server`                      | Self-hosted nonce, verification, identity, JWT session, refresh, and middleware helpers    |
-| `packages/cli`                 | `@dolphin-id/cli`                         | `dolphin-id create` scaffolder for Next.js integrations                                    |
-| `packages/hosted`              | `@dolphin-id/hosted`                      | Hosted nonce/session service primitives and in-memory development stores                   |
-| `packages/adapter-evm`         | `@dolphin-id/adapter-evm`                 | EIP-6963/EIP-1193 discovery, WalletConnect injection, mobile deep links, and EIP-4361 SIWE |
-| `packages/adapter-sui`         | `@dolphin-id/adapter-sui`                 | Sui Wallet Standard-style discovery, personal-message signing, and address normalization   |
-| `packages/adapter-solana`      | `@dolphin-id/adapter-solana`              | Solana Wallet Standard-style discovery, SIWS signing, and base58 normalization             |
-| `packages/adapter-bitcoin`     | `@dolphin-id/adapter-bitcoin`             | Bitcoin Wallet Standard-style discovery, P2PKH SIWX, and address normalization             |
-| `packages/adapter-aptos`       | `@dolphin-id/adapter-aptos`               | Aptos Wallet Standard-style discovery, Ed25519 SIWX, and address normalization             |
-| `sdks/go`                      | Go SDK                                    | EVM/Sui verification and HS256 session claim helpers                                       |
-| `sdks/rust`                    | Rust SDK                                  | EVM/Sui verification and HS256 session claim helpers                                       |
-| `sdks/python`                  | Python SDK                                | EVM/Sui verification and HS256 session claim helpers                                       |
-| `apps/docs`                    | `@dolphin-id/docs`                        | Next.js documentation site                                                                 |
-| `examples/next`                | `@dolphin-id/example-next`                | Full Next.js EVM/Sui login example with Playwright coverage                                |
-| `examples/basic`               | `@dolphin-id/example-basic`               | Minimal adapter construction playground                                                    |
-| `examples/adapter-third-party` | `@dolphin-id/example-adapter-third-party` | Contract-tested sample external adapter                                                    |
+| Chain   | Client package                | Server verification             |
+| ------- | ----------------------------- | ------------------------------- |
+| EVM     | `@dolphin-id/adapter-evm`     | EIP-4361 SIWE                   |
+| Sui     | `@dolphin-id/adapter-sui`     | Sui personal-message signatures |
+| Solana  | `@dolphin-id/adapter-solana`  | SIWS Ed25519 signatures         |
+| Bitcoin | `@dolphin-id/adapter-bitcoin` | P2PKH SIWX signatures           |
+| Aptos   | `@dolphin-id/adapter-aptos`   | Aptos Ed25519 SIWX signatures   |
 
 ## Install
 
-Install the core React, UI, adapter, and server packages used by a typical
-self-hosted React app:
+**Prerequisites:** Node.js 22+, a package manager (examples use pnpm 11), and
+React 18+ for the client packages.
+
+Install the React runtime, optional UI, the adapters you need, and the
+self-hosted server package:
 
 ```bash
 pnpm add @dolphin-id/core @dolphin-id/react @dolphin-id/ui
@@ -74,7 +54,7 @@ pnpm add @dolphin-id/adapter-evm @dolphin-id/adapter-sui @dolphin-id/adapter-sol
 pnpm add @dolphin-id/server
 ```
 
-Add only the adapters you need. Bitcoin and Aptos are available as:
+Add Bitcoin and Aptos support only when your app needs them:
 
 ```bash
 pnpm add @dolphin-id/adapter-bitcoin @dolphin-id/adapter-aptos
@@ -82,7 +62,7 @@ pnpm add @dolphin-id/adapter-bitcoin @dolphin-id/adapter-aptos
 
 ## Quick Start
 
-Create chain adapters:
+Create the chain adapters your app supports:
 
 ```ts
 import { createEvmAdapter } from "@dolphin-id/adapter-evm";
@@ -96,7 +76,7 @@ export const adapters = [
 ];
 ```
 
-Wrap your React app with the provider and optional default UI:
+Wrap your app with the headless provider and default UI components:
 
 ```tsx
 import { DolphinProvider } from "@dolphin-id/react";
@@ -125,7 +105,7 @@ export function App() {
 }
 ```
 
-Create a self-hosted auth core on the server:
+Create server auth with chain-specific verification:
 
 ```ts
 import {
@@ -140,46 +120,49 @@ export const auth = createServerAuth({
   runtimeEnvironment: process.env.NODE_ENV,
   publicOrigin: process.env.NEXT_PUBLIC_APP_ORIGIN,
   verifySiwx: async (request) => {
-    if (request.message.chainType === "evm") {
-      return verifyEvmSiweMessage(request, {
-        expectedDomain: "example.com",
-        expectedChainId: 1
-      });
+    switch (request.message.chainType) {
+      case "evm":
+        return verifyEvmSiweMessage(request, {
+          expectedDomain: "example.com",
+          expectedChainId: 1
+        });
+      case "sui":
+        return verifySuiPersonalMessage(request, {
+          expectedChainId: "testnet"
+        });
+      case "solana":
+        return verifySolanaSiwsMessage(request, {
+          expectedDomain: "example.com",
+          expectedChainId: "devnet"
+        });
+      default:
+        return { ok: false, reason: "Unsupported chain." };
     }
-
-    if (request.message.chainType === "sui") {
-      return verifySuiPersonalMessage(request, {
-        expectedChainId: "testnet"
-      });
-    }
-
-    if (request.message.chainType === "solana") {
-      return verifySolanaSiwsMessage(request, {
-        expectedDomain: "example.com",
-        expectedChainId: "devnet"
-      });
-    }
-
-    return { ok: false, reason: "Unsupported chain." };
   }
 });
 ```
 
-Implement auth routes for nonce issue, verification, session refresh, current
-session, and logout. The complete route flow is shown in
-[`examples/next`](examples/next) and described in
-[`docs/getting-started.md`](docs/getting-started.md).
+Expose auth routes for:
+
+- `POST /auth/nonce`
+- `POST /auth/verify`
+- `POST /auth/refresh`
+- `GET /auth/me`
+- `POST /auth/logout`
+
+See [`docs/getting-started.md`](docs/getting-started.md) for the route flow and
+[`examples/next`](examples/next) for complete Next.js App Router handlers.
 
 ## CLI Scaffolder
 
-The CLI can generate a runnable Next.js app with selected chains, UI mode, auth
-mode, and token storage mode:
+Generate a runnable Next.js app with selected chains, UI mode, auth mode, and
+token storage mode:
 
 ```bash
 dolphin-id create my-dolphin-app --framework next --chains evm,sui --ui default --auth self-hosted --token-storage cookie
 ```
 
-After generation:
+Then run the generated app:
 
 ```bash
 cd my-dolphin-app
@@ -188,11 +171,11 @@ pnpm test
 pnpm dev
 ```
 
-See [`docs/cli.md`](docs/cli.md) for recipes and supported flags.
+More recipes live in [`docs/cli.md`](docs/cli.md).
 
 ## Examples
 
-Run the Next.js example from this repository:
+Run the repository's Next.js example:
 
 ```bash
 pnpm install
@@ -203,47 +186,50 @@ Open `http://127.0.0.1:3000`, connect a mocked EVM or Sui wallet, and sign in.
 The example stores the issued session in an HTTP-only cookie and restores it
 through `/auth/me` after refresh.
 
-Run its browser tests:
+Run its browser coverage:
 
 ```bash
 pnpm --filter @dolphin-id/example-next test
 ```
 
-Use `examples/adapter-third-party` as the minimum contract-test template for
-external chain adapters.
+## Workspace Map
+
+| Path                           | Package                                   | Purpose                                                                                 |
+| ------------------------------ | ----------------------------------------- | --------------------------------------------------------------------------------------- |
+| `packages/core`                | `@dolphin-id/core`                        | Chain-neutral contracts, SIWX types, events, errors, and shared state                   |
+| `packages/react`               | `@dolphin-id/react`                       | `DolphinProvider`, headless hooks, auth client integration, and session state           |
+| `packages/ui`                  | `@dolphin-id/ui`                          | Default UI components, themes, locales, and copy overrides                              |
+| `packages/server`              | `@dolphin-id/server`                      | Self-hosted nonce, verification, identity, JWT session, refresh, and middleware helpers |
+| `packages/cli`                 | `@dolphin-id/cli`                         | App scaffolder for Next.js integrations                                                 |
+| `packages/hosted`              | `@dolphin-id/hosted`                      | Hosted nonce/session service primitives and development stores                          |
+| `packages/adapter-*`           | `@dolphin-id/adapter-*`                   | Chain-specific wallet discovery, SIWX signing, and address normalization                |
+| `sdks/go`                      | Go SDK                                    | EVM/Sui verification and HS256 session claim helpers                                    |
+| `sdks/rust`                    | Rust SDK                                  | EVM/Sui verification and HS256 session claim helpers                                    |
+| `sdks/python`                  | Python SDK                                | EVM/Sui verification and HS256 session claim helpers                                    |
+| `apps/docs`                    | `@dolphin-id/docs`                        | Next.js documentation site                                                              |
+| `examples/next`                | `@dolphin-id/example-next`                | Full EVM/Sui login example with Playwright coverage                                     |
+| `examples/basic`               | `@dolphin-id/example-basic`               | Minimal adapter construction playground                                                 |
+| `examples/adapter-third-party` | `@dolphin-id/example-adapter-third-party` | Contract-tested sample external adapter                                                 |
 
 ## Development
 
-Prerequisites used by CI:
-
-- Node.js 22
-- pnpm 11.0.9
-
-Install dependencies:
+CI runs on Node.js 22 and pnpm 11.0.9.
 
 ```bash
 pnpm install
-```
-
-Run the same quality gates as CI:
-
-```bash
 pnpm typecheck
 pnpm test
 pnpm lint
 pnpm build
 ```
 
-Check formatting:
+Additional local commands:
 
 ```bash
 pnpm format:check
-```
-
-Run the documentation site:
-
-```bash
 pnpm --filter @dolphin-id/docs dev
+pnpm changeset
+pnpm version-packages
 ```
 
 Run multi-language SDK parity tests:
@@ -252,13 +238,6 @@ Run multi-language SDK parity tests:
 cd sdks/go && go test ./...
 cd ../rust && cargo test
 cd ../python && python3 -m pip install -e '.[test]' && pytest
-```
-
-Prepare versioned package changes without publishing:
-
-```bash
-pnpm changeset
-pnpm version-packages
 ```
 
 ## Documentation
@@ -277,7 +256,7 @@ pnpm version-packages
 ## Security
 
 Production integrations should review [`docs/security.md`](docs/security.md)
-before accepting traffic. The important defaults are:
+before accepting traffic.
 
 - Sign-in nonces are random, expiring, single-use, and domain-bound.
 - `createServerAuth` rejects short or obvious JWT secrets in production.
@@ -285,13 +264,29 @@ before accepting traffic. The important defaults are:
   reviewed.
 - Cookie-backed sessions use HttpOnly cookies and production `Secure`
   enforcement through `createSessionCookieOptions`.
-- Refresh tokens rotate on every successful refresh, and
-  `invalidateSessions(subject)` forces existing access and refresh tokens to
+- Refresh tokens rotate on every successful refresh.
+- `invalidateSessions(subject)` forces existing access and refresh tokens to
   fail.
 - Hosted projects must enforce exact allowed domains, scoped API keys, quotas,
   and audit logging.
 
+To report a vulnerability privately, open a
+[GitHub security advisory](https://github.com/DolphinsLab/dolphin-id/security/advisories/new)
+rather than a public issue.
+
+## Contributing
+
+Contributions are welcome. The
+[development plan and collaboration workflow](development-plan-and-collaboration-workflow.md)
+describes branch, review, and release conventions. Before opening a pull
+request, run the [development](#development) checks (`typecheck`, `test`,
+`lint`, `build`) and add a changeset with `pnpm changeset` when your change
+affects a published package.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=DolphinsLab/dolphin-id&type=Date)](https://star-history.com/#DolphinsLab/dolphin-id&Date)
+
 ## License
 
-TODO: Add a repository license file and update this section with the selected
-license.
+Dolphin ID is licensed under the [Apache License 2.0](LICENSE).

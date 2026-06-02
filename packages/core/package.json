@@ -1,6 +1,7 @@
 {
   "name": "@dolphin-id/core",
   "version": "1.0.0",
+  "license": "Apache-2.0",
   "description": "Core contracts and shared types for Dolphin ID.",
   "type": "module",
   "sideEffects": false,

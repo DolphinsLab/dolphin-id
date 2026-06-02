@@ -1,6 +1,7 @@
 {
   "name": "@dolphin-id/hosted",
   "version": "1.0.0",
+  "license": "Apache-2.0",
   "description": "Hosted nonce and session service primitives for Dolphin ID.",
   "type": "module",
   "sideEffects": false,

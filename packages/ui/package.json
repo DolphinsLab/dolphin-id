@@ -1,6 +1,7 @@
 {
   "name": "@dolphin-id/ui",
   "version": "1.0.0",
+  "license": "Apache-2.0",
   "description": "Default UI components for Dolphin ID.",
   "type": "module",
   "sideEffects": false,

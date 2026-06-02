@@ -3,6 +3,7 @@ name = "dolphin-id-server"
 version = "1.0.0"
 edition = "2021"
 description = "Rust server verification helpers for Dolphin ID."
+license = "Apache-2.0"
 
 [dependencies]
 base64 = "0.22"

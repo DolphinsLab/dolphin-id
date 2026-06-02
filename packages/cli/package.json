@@ -1,6 +1,7 @@
 {
   "name": "@dolphin-id/cli",
   "version": "1.0.0",
+  "license": "Apache-2.0",
   "description": "CLI scaffolder for Dolphin ID applications.",
   "type": "module",
   "sideEffects": false,
