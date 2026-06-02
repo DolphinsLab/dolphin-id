@@ -42,21 +42,26 @@ Current scope: `v1.0.0`, released on 2026-06-01. Read the
 
 ## Install
 
+> **Using an AI coding agent?** This repo ships a
+> [`dolphin-id` skill](skills/dolphin-id/SKILL.md). Ask your agent to "install
+> and configure Dolphin ID" and it will add the packages, wire up
+> `DolphinProvider`, and scaffold server auth for you. To start a fresh app
+> instead, use the [`dolphin-id create`](#cli-scaffolder) scaffolder.
+
 **Prerequisites:** Node.js 22+, a package manager (examples use pnpm 11), and
 React 18+ for the client packages.
 
-Install the React runtime, optional UI, the adapters you need, and the
-self-hosted server package:
+Install the core runtime, the adapters you need, and any optional packages:
 
 ```bash
-pnpm add @dolphin-id/core @dolphin-id/react @dolphin-id/ui
-pnpm add @dolphin-id/adapter-evm @dolphin-id/adapter-sui @dolphin-id/adapter-solana
+# React app: core + provider + optional default UI + the adapters you support
+pnpm add @dolphin-id/core @dolphin-id/react @dolphin-id/ui \
+  @dolphin-id/adapter-evm @dolphin-id/adapter-sui @dolphin-id/adapter-solana
+
+# Self-hosted auth server
 pnpm add @dolphin-id/server
-```
 
-Add Bitcoin and Aptos support only when your app needs them:
-
-```bash
+# Add Bitcoin / Aptos only when your app needs them
 pnpm add @dolphin-id/adapter-bitcoin @dolphin-id/adapter-aptos
 ```
 
