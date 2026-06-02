@@ -1,9 +1,37 @@
 ---
 name: dolphin-id
-description: Guides agents working in the Dolphin ID multi-chain Web3 login pnpm workspace. Use when modifying @dolphin-id packages, chain adapters, React/UI auth flows, server SDKs, docs, examples, release tasks, or issue-driven project work in this repository.
+description: Guides agents working in the Dolphin ID multi-chain Web3 login pnpm workspace. Use when modifying @dolphin-id packages, chain adapters, React/UI auth flows, server SDKs, docs, examples, release tasks, or issue-driven project work in this repository — or when installing and configuring Dolphin ID into a consuming app.
 ---
 
 # Dolphin ID
+
+## Installing And Configuring Dolphin ID In An App
+
+Use this when a user asks to "install" or "set up" Dolphin ID in their own
+project. For a brand-new app, prefer the scaffolder:
+`dolphin-id create <name> --framework next --chains evm,sui --ui default --auth self-hosted --token-storage cookie`.
+For an existing app, do it by hand:
+
+1. Install `@dolphin-id/core` and `@dolphin-id/react`, the
+   `@dolphin-id/adapter-*` packages for the chains they need, and optionally
+   `@dolphin-id/ui` (default components) and `@dolphin-id/server` (self-hosted
+   auth). Requires Node.js 22+ and React 18+.
+2. Create the adapters with `createEvmAdapter` / `createSuiAdapter` /
+   `createSolanaAdapter` (etc.) and pass them to `DolphinProvider` along with
+   the `auth` endpoint config (`nonceUrl`, `verifyUrl`, `refreshUrl`,
+   `logoutUrl`). Render `ConnectButton` / `AccountDisplay` from `@dolphin-id/ui`
+   or build custom UI on the headless hooks.
+3. On the server, call `createServerAuth({ jwtSecret, runtimeEnvironment, publicOrigin, verifySiwx })`,
+   dispatching per `request.message.chainType` to `verifyEvmSiweMessage`,
+   `verifySuiPersonalMessage`, `verifySolanaSiwsMessage`, etc. Expose
+   `POST /auth/nonce`, `POST /auth/verify`, `POST /auth/refresh`,
+   `GET /auth/me`, and `POST /auth/logout`.
+4. Provide `DOLPHIN_JWT_SECRET` (long/non-obvious in production) and the app's
+   public origin via env. Verify with `pnpm test` / `pnpm dev`.
+
+Authoritative references: the root `README.md` Quick Start,
+`docs/getting-started.md` (route flow), `docs/cli.md` (scaffolder recipes), and
+`examples/next` (complete Next.js App Router handlers).
 
 ## Repository Map
 
