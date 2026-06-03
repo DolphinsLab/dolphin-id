@@ -15,8 +15,12 @@ Self-hosted OpenID Connect issuer for Dolphin ID on Cloudflare Workers.
 - `POST /oauth2/token`
 - `GET /oauth2/userinfo`
 - `GET /register`
+- `GET /register/oidc-client`
+- `GET /register/oidc/callback`
 - `POST /register/api/clients`
 - `GET /admin`
+- `GET /admin/oidc-client`
+- `GET /admin/oidc/callback`
 - `GET /admin/api/clients`
 - `POST /admin/api/clients`
 - `DELETE /admin/api/clients/:clientId`
@@ -65,6 +69,22 @@ developer identity.
 Admins can open `/admin`, enter `DOLPHIN_OIDC_ADMIN_TOKEN`, then list, create,
 or delete clients. Admin-created clients may use a custom `clientId` and
 `clientSecret`.
+
+## First-party Admin Client
+
+The Worker always exposes a reserved first-party public OIDC client for Dolphin
+ID's own pages:
+
+- `clientId`: `dolphin-admin`
+- redirect URIs:
+  - `/register/oidc/callback`
+  - `/admin/oidc/callback`
+- auth method: `none`
+- PKCE: required, `S256`
+
+Metadata is available from `/register/oidc-client` and `/admin/oidc-client`.
+The reserved client cannot be overridden through public registration or the
+admin API.
 
 Optional bootstrap clients can still be supplied with `DOLPHIN_OIDC_CLIENTS`.
 This is useful for immutable deployments or emergency recovery, but it is not

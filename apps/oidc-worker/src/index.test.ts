@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
@@ -27,6 +27,22 @@ describe("OIDC Worker", () => {
     expect(html).toContain("Register OIDC Client");
     expect(html).toContain("Connect wallet & sign in");
     expect(html).toContain("/register/api/clients");
+  });
+
+  it("exposes a first-party OIDC client for Dolphin ID pages", async () => {
+    const response = await handleRequest(
+      new Request("https://id.example.com/register/oidc-client"),
+      fakeEnv()
+    );
+
+    await expect(response.json()).resolves.toEqual({
+      issuer: "https://id.example.com",
+      clientId: "dolphin-admin",
+      redirectUri: "https://id.example.com/register/oidc/callback",
+      allowedScopes: ["openid", "profile", "wallet"],
+      tokenEndpointAuthMethod: "none",
+      pkce: { required: true, codeChallengeMethod: "S256" }
+    });
   });
 
   it("serves an admin page for OIDC client registration", async () => {
@@ -128,16 +144,56 @@ describe("OIDC Worker", () => {
       env
     );
 
-    await expect(list.json()).resolves.toMatchObject({
-      clients: [
-        {
-          clientId: "dynamic-app",
-          redirectUris: ["https://dynamic.example.com/callback"],
-          allowedScopes: ["openid", "profile", "wallet"],
-          hasClientSecret: true,
-          source: "managed"
-        }
-      ]
+    const listed = (await list.json()) as {
+      readonly clients: readonly { readonly clientId: string; readonly source: string }[];
+    };
+    expect(listed.clients).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ clientId: "dolphin-admin", source: "first-party" }),
+        expect.objectContaining({ clientId: "dynamic-app", source: "managed" })
+      ])
+    );
+  });
+
+  it("runs a first-party OIDC authorization-code flow without a client secret", async () => {
+    const env = fakeEnv({ DOLPHIN_OIDC_CLIENTS: "[]" });
+    const codeVerifier = "first-party-verifier";
+    const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
+    const authorize = await handleRequest(
+      new Request(
+        `https://id.example.com/oauth2/authorize?response_type=code&client_id=dolphin-admin&redirect_uri=${encodeURIComponent("https://id.example.com/register/oidc/callback")}&scope=openid%20profile%20wallet&state=state-123&code_challenge=${codeChallenge}&code_challenge_method=S256`,
+        { headers: { cookie: sessionCookie() } }
+      ),
+      env
+    );
+    const redirect = new URL(String(authorize.headers.get("location")));
+    const code = redirect.searchParams.get("code");
+
+    expect(authorize.status).toBe(302);
+    expect(redirect.origin + redirect.pathname).toBe(
+      "https://id.example.com/register/oidc/callback"
+    );
+    expect(code).toBeTruthy();
+
+    const token = await handleRequest(
+      new Request("https://id.example.com/oauth2/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          client_id: "dolphin-admin",
+          code: String(code),
+          redirect_uri: "https://id.example.com/register/oidc/callback",
+          code_verifier: codeVerifier
+        })
+      }),
+      env
+    );
+
+    expect(token.status).toBe(200);
+    await expect(token.json()).resolves.toMatchObject({
+      token_type: "Bearer",
+      scope: "openid profile wallet"
     });
   });
 

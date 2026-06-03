@@ -119,7 +119,7 @@ interface AdminOidcClient {
   readonly redirectUris: readonly string[];
   readonly allowedScopes: readonly string[];
   readonly hasClientSecret: boolean;
-  readonly source: "managed" | "bootstrap";
+  readonly source: "managed" | "bootstrap" | "first-party";
 }
 
 type StoredOidcClient = OidcClient & {
@@ -132,6 +132,7 @@ const OIDC_CLIENT_INDEX_KEY = "oidc-client:index";
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 const HTML_HEADERS = { "content-type": "text/html; charset=utf-8" };
 const DEFAULT_OIDC_SCOPES = ["openid", "profile", "wallet"] as const;
+const FIRST_PARTY_ADMIN_CLIENT_ID = "dolphin-admin";
 
 const worker = {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -158,12 +159,32 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       return registrationPage(url.origin, corsHeaders);
     }
 
+    if (request.method === "GET" && url.pathname === "/register/oidc-client") {
+      return json(firstPartyOidcClientMetadata(url.origin, "/register/oidc/callback"), {
+        headers: corsHeaders
+      });
+    }
+
+    if (request.method === "GET" && url.pathname === "/register/oidc/callback") {
+      return oidcClientCallbackPage(url.origin, "/register", corsHeaders);
+    }
+
     if (request.method === "POST" && url.pathname === "/register/api/clients") {
       return await handlePublicRegisterClient(request, env, corsHeaders);
     }
 
     if (request.method === "GET" && url.pathname === "/admin") {
       return adminPage(url.origin, Boolean(env.DOLPHIN_OIDC_ADMIN_TOKEN), corsHeaders);
+    }
+
+    if (request.method === "GET" && url.pathname === "/admin/oidc-client") {
+      return json(firstPartyOidcClientMetadata(url.origin, "/admin/oidc/callback"), {
+        headers: corsHeaders
+      });
+    }
+
+    if (request.method === "GET" && url.pathname === "/admin/oidc/callback") {
+      return oidcClientCallbackPage(url.origin, "/admin", corsHeaders);
     }
 
     if (url.pathname === "/admin/api/clients" && request.method === "GET") {
@@ -474,10 +495,7 @@ function createWorkerContext(env: Env) {
   const oidc = createOidcProvider({
     auth,
     issuer,
-    clientStore: new WorkerOidcClientStore(
-      storage,
-      parseOidcClients(env.DOLPHIN_OIDC_CLIENTS ?? "[]")
-    ),
+    clientStore: workerOidcClientStore(env, issuer),
     authorizationCodeStore: new WorkerOidcCodeStore(storage),
     signingKey: requireEnv(env.DOLPHIN_OIDC_SIGNING_KEY, "DOLPHIN_OIDC_SIGNING_KEY"),
     ...(env.DOLPHIN_OIDC_KEY_ID ? { keyId: env.DOLPHIN_OIDC_KEY_ID } : {}),
@@ -608,29 +626,44 @@ class WorkerOidcCodeStore implements OidcAuthorizationCodeStore {
 }
 
 class WorkerOidcClientStore implements OidcClientStore {
+  readonly #firstPartyClients = new Map<string, OidcClient>();
   readonly #bootstrapClients = new Map<string, OidcClient>();
 
   constructor(
     private readonly storage: StorageClient,
+    firstPartyClients: readonly OidcClient[] = [],
     bootstrapClients: readonly OidcClient[] = []
   ) {
+    firstPartyClients.forEach((client) => this.#firstPartyClients.set(client.clientId, client));
     bootstrapClients.forEach((client) => this.#bootstrapClients.set(client.clientId, client));
   }
 
   async getClient(clientId: string): Promise<OidcClient | null> {
+    const firstParty = this.#firstPartyClients.get(clientId);
+    if (firstParty) {
+      return firstParty;
+    }
+
     const stored = await this.storage.send({ type: "oidcClient.get", clientId });
     return (stored as OidcClient | null) ?? this.#bootstrapClients.get(clientId) ?? null;
   }
 
   async listClients(): Promise<readonly AdminOidcClient[]> {
-    const stored = (
-      (await this.storage.send({ type: "oidcClient.list" })) as readonly OidcClient[]
-    ).map((client) => adminClientView(client, "managed"));
-    const storedIds = new Set(stored.map((client) => client.clientId));
+    const firstParty = [...this.#firstPartyClients.values()].map((client) =>
+      adminClientView(client, "first-party")
+    );
+    const firstPartyIds = new Set(firstParty.map((client) => client.clientId));
+    const stored = ((await this.storage.send({ type: "oidcClient.list" })) as readonly OidcClient[])
+      .filter((client) => !firstPartyIds.has(client.clientId))
+      .map((client) => adminClientView(client, "managed"));
+    const reservedIds = new Set([
+      ...firstParty.map((client) => client.clientId),
+      ...stored.map((client) => client.clientId)
+    ]);
     const bootstrap = [...this.#bootstrapClients.values()]
-      .filter((client) => !storedIds.has(client.clientId))
+      .filter((client) => !reservedIds.has(client.clientId))
       .map((client) => adminClientView(client, "bootstrap"));
-    return [...stored, ...bootstrap].sort((left, right) =>
+    return [...firstParty, ...stored, ...bootstrap].sort((left, right) =>
       left.clientId.localeCompare(right.clientId)
     );
   }
@@ -799,11 +832,36 @@ async function handleAdminDeleteClient(
   return json({ ok: true }, { headers: corsHeaders });
 }
 
-function workerOidcClientStore(env: Env): WorkerOidcClientStore {
+function workerOidcClientStore(
+  env: Env,
+  issuer = requireEnv(env.DOLPHIN_ISSUER, "DOLPHIN_ISSUER")
+): WorkerOidcClientStore {
   return new WorkerOidcClientStore(
     storageClient(env),
+    firstPartyOidcClients(issuer),
     parseOidcClients(env.DOLPHIN_OIDC_CLIENTS ?? "[]")
   );
+}
+
+function firstPartyOidcClients(issuer: string): readonly OidcClient[] {
+  return [
+    {
+      clientId: FIRST_PARTY_ADMIN_CLIENT_ID,
+      redirectUris: [`${issuer}/admin/oidc/callback`, `${issuer}/register/oidc/callback`],
+      allowedScopes: [...DEFAULT_OIDC_SCOPES]
+    }
+  ];
+}
+
+function firstPartyOidcClientMetadata(origin: string, callbackPath: string) {
+  return {
+    issuer: origin,
+    clientId: FIRST_PARTY_ADMIN_CLIENT_ID,
+    redirectUri: `${origin}${callbackPath}`,
+    allowedScopes: [...DEFAULT_OIDC_SCOPES],
+    tokenEndpointAuthMethod: "none",
+    pkce: { required: true, codeChallengeMethod: "S256" }
+  };
 }
 
 async function consumePublicRegistrationQuota(
@@ -900,6 +958,10 @@ async function readJsonObject(request: Request): Promise<Readonly<Record<string,
 
 function normalizeAdminClientInput(body: Readonly<Record<string, unknown>>): OidcClient {
   const clientId = readRequiredString(body.clientId, "clientId");
+
+  if (clientId === FIRST_PARTY_ADMIN_CLIENT_ID) {
+    throw new Error(`${FIRST_PARTY_ADMIN_CLIENT_ID} is reserved for Dolphin ID.`);
+  }
 
   if (!/^[A-Za-z0-9._:-]{3,128}$/.test(clientId)) {
     throw new Error(
@@ -1392,6 +1454,49 @@ wallet</textarea>
         ].join("\\n");
       }
 
+      function randomString(bytes = 32) {
+        const values = new Uint8Array(bytes);
+        crypto.getRandomValues(values);
+        let binary = "";
+        values.forEach((value) => {
+          binary += String.fromCharCode(value);
+        });
+        return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+      }
+
+      async function sha256Base64Url(value) {
+        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+        return randomStringFromBytes(new Uint8Array(digest));
+      }
+
+      function randomStringFromBytes(values) {
+        let binary = "";
+        values.forEach((value) => {
+          binary += String.fromCharCode(value);
+        });
+        return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+      }
+
+      async function startFirstPartyOidc() {
+        const state = randomString(24);
+        const nonce = randomString(24);
+        const codeVerifier = randomString(32);
+        const codeChallenge = await sha256Base64Url(codeVerifier);
+        sessionStorage.setItem("dolphin_admin_oidc_state", state);
+        sessionStorage.setItem("dolphin_admin_oidc_code_verifier", codeVerifier);
+        const params = new URLSearchParams({
+          response_type: "code",
+          client_id: "${FIRST_PARTY_ADMIN_CLIENT_ID}",
+          redirect_uri: location.origin + "/register/oidc/callback",
+          scope: "openid profile wallet",
+          state,
+          nonce,
+          code_challenge: codeChallenge,
+          code_challenge_method: "S256"
+        });
+        location.assign("/oauth2/authorize?" + params.toString());
+      }
+
       async function signInWithEvm() {
         if (!window.ethereum) {
           throw new Error("No injected EVM wallet found.");
@@ -1461,8 +1566,8 @@ wallet</textarea>
         signInButton.disabled = true;
         try {
           await signInWithEvm();
-          await refreshSession();
-          showAuth("Signed in.");
+          showAuth("Signed in. Starting first-party OIDC flow...");
+          await startFirstPartyOidc();
         } catch (error) {
           signInButton.disabled = false;
           showAuth(error.message, true);
@@ -1503,6 +1608,104 @@ wallet</textarea>
       });
 
       refreshSession().catch(() => undefined);
+    </script>
+  </body>
+</html>`,
+    {
+      status: 200,
+      headers: { ...HTML_HEADERS, ...corsHeaders }
+    }
+  );
+}
+
+function oidcClientCallbackPage(
+  origin: string,
+  returnPath: string,
+  corsHeaders: HeadersInit = {}
+): Response {
+  return new Response(
+    `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dolphin ID OIDC Callback</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f7f7f4;
+        color: #171717;
+      }
+      main {
+        width: min(680px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 56px 0;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 28px;
+      }
+      p {
+        color: #525252;
+        line-height: 1.5;
+      }
+      pre {
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+        border: 1px solid #deded8;
+        border-radius: 6px;
+        background: #fff;
+        padding: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Completing sign-in</h1>
+      <p id="status">Exchanging authorization code...</p>
+      <pre id="error" hidden></pre>
+    </main>
+    <script>
+      async function complete() {
+        const params = new URLSearchParams(location.search);
+        const code = params.get("code");
+        const state = params.get("state");
+        const expectedState = sessionStorage.getItem("dolphin_admin_oidc_state");
+        const codeVerifier = sessionStorage.getItem("dolphin_admin_oidc_code_verifier");
+        const status = document.querySelector("#status");
+        const error = document.querySelector("#error");
+
+        if (!code || !state || !expectedState || state !== expectedState || !codeVerifier) {
+          throw new Error("Invalid OIDC callback state.");
+        }
+
+        const response = await fetch("/oauth2/token", {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "authorization_code",
+            client_id: "${FIRST_PARTY_ADMIN_CLIENT_ID}",
+            code,
+            redirect_uri: location.origin + location.pathname,
+            code_verifier: codeVerifier
+          })
+        });
+        const token = await response.json();
+        if (!response.ok) throw new Error(token.error || "Token exchange failed.");
+        sessionStorage.setItem("dolphin_admin_oidc_token", JSON.stringify(token));
+        sessionStorage.removeItem("dolphin_admin_oidc_state");
+        sessionStorage.removeItem("dolphin_admin_oidc_code_verifier");
+        status.textContent = "Signed in. Redirecting...";
+        location.replace("${escapeHtml(origin)}${escapeHtml(returnPath)}");
+      }
+
+      complete().catch((err) => {
+        document.querySelector("#status").textContent = "Could not complete sign-in.";
+        const error = document.querySelector("#error");
+        error.hidden = false;
+        error.textContent = err.message;
+      });
     </script>
   </body>
 </html>`,
