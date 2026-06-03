@@ -1,0 +1,16 @@
+{
+  "name": "@dolphin-id/oidc-worker",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@dolphin-id/server": "workspace:*"
+  }
+}

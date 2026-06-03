@@ -1,0 +1,12 @@
+name = "dolphin-id-oidc"
+main = "src/index.ts"
+compatibility_date = "2026-06-03"
+compatibility_flags = ["nodejs_compat"]
+
+[[durable_objects.bindings]]
+name = "AUTH_STORAGE"
+class_name = "DolphinOidcStorage"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["DolphinOidcStorage"]
