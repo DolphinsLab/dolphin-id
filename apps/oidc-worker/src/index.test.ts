@@ -5,6 +5,16 @@ import { describe, expect, it } from "vitest";
 import { handleRequest, type Env } from "./index";
 
 describe("OIDC Worker", () => {
+  it("serves a landing page at the issuer root", async () => {
+    const response = await handleRequest(new Request("https://id.example.com/"), fakeEnv());
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(html).toContain("Dolphin ID OIDC");
+    expect(html).toContain("https://id.example.com/.well-known/openid-configuration");
+  });
+
   it("serves health without configured secrets", async () => {
     const response = await handleRequest(new Request("https://id.example.com/health"), fakeEnv());
 

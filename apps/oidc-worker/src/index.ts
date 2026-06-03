@@ -108,6 +108,7 @@ type SerializedOidcCodeRecord = Omit<
 
 const STORAGE_OBJECT_NAME = "global";
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
+const HTML_HEADERS = { "content-type": "text/html; charset=utf-8" };
 
 const worker = {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -126,6 +127,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   }
 
   try {
+    if (request.method === "GET" && url.pathname === "/") {
+      return landingPage(url.origin, corsHeaders);
+    }
+
     if (url.pathname === "/health") {
       return json({ ok: true }, { headers: corsHeaders });
     }
@@ -583,6 +588,103 @@ function json(
   });
 }
 
+function landingPage(origin: string, corsHeaders: HeadersInit = {}): Response {
+  const discoveryUrl = `${origin}/.well-known/openid-configuration`;
+  const jwksUrl = `${origin}/.well-known/jwks.json`;
+  const healthUrl = `${origin}/health`;
+
+  return new Response(
+    `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dolphin ID OIDC</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f7f7f4;
+        color: #171717;
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 56px 24px;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 32px;
+        font-weight: 700;
+      }
+      p {
+        margin: 0 0 28px;
+        line-height: 1.6;
+        color: #525252;
+      }
+      dl {
+        display: grid;
+        gap: 12px;
+        margin: 0;
+      }
+      div {
+        border: 1px solid #deded8;
+        border-radius: 8px;
+        background: #ffffff;
+        padding: 14px 16px;
+      }
+      dt {
+        font-size: 13px;
+        font-weight: 700;
+        color: #525252;
+        margin-bottom: 6px;
+      }
+      dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      a {
+        color: #0f766e;
+        text-decoration-thickness: 1px;
+        text-underline-offset: 3px;
+      }
+      code {
+        font: 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Dolphin ID OIDC</h1>
+      <p>This self-hosted issuer is online. Register an OIDC client before starting an authorization-code flow.</p>
+      <dl>
+        <div>
+          <dt>Issuer</dt>
+          <dd><code>${escapeHtml(origin)}</code></dd>
+        </div>
+        <div>
+          <dt>Discovery</dt>
+          <dd><a href="${escapeHtml(discoveryUrl)}">${escapeHtml(discoveryUrl)}</a></dd>
+        </div>
+        <div>
+          <dt>JWKS</dt>
+          <dd><a href="${escapeHtml(jwksUrl)}">${escapeHtml(jwksUrl)}</a></dd>
+        </div>
+        <div>
+          <dt>Health</dt>
+          <dd><a href="${escapeHtml(healthUrl)}">${escapeHtml(healthUrl)}</a></dd>
+        </div>
+      </dl>
+    </main>
+  </body>
+</html>`,
+    {
+      status: 200,
+      headers: { ...HTML_HEADERS, ...corsHeaders }
+    }
+  );
+}
+
 function corsHeadersFor(request: Request, env: Env): HeadersInit {
   const allowed = new Set(
     (env.DOLPHIN_ALLOWED_ORIGINS ?? "")
@@ -646,6 +748,15 @@ function parseCookies(cookieHeader: string): Readonly<Record<string, string>> {
   });
 
   return cookies;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function parseOidcClients(raw: string): readonly OidcClient[] {
