@@ -1,4 +1,15 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  createPrivateKey,
+  createPublicKey,
+  generateKeyPairSync,
+  randomBytes,
+  sign as cryptoSign,
+  timingSafeEqual,
+  verify as cryptoVerify,
+  type KeyObject
+} from "node:crypto";
 
 import { ed25519 } from "@noble/curves/ed25519";
 import { secp256k1 } from "@noble/curves/secp256k1";
@@ -758,6 +769,7 @@ export interface ServerAuth {
 
 export interface AuthRouteRequest {
   readonly body?: unknown;
+  readonly query?: Readonly<Record<string, unknown>>;
   readonly cookies?: Readonly<Record<string, string | undefined>>;
   readonly headers?: Readonly<Record<string, string | undefined>>;
   readonly now?: Date;
@@ -766,7 +778,165 @@ export interface AuthRouteRequest {
 export interface AuthRouteResponse {
   readonly status: number;
   readonly body: Readonly<Record<string, unknown>>;
+  readonly headers?: Readonly<Record<string, string>>;
   readonly cookies?: readonly AuthRouteCookie[];
+}
+
+export interface OidcClient {
+  readonly clientId: string;
+  readonly clientSecret?: string;
+  readonly redirectUris: readonly string[];
+  readonly allowedScopes?: readonly string[];
+}
+
+export interface OidcClientStore {
+  getClient(clientId: string): Promise<OidcClient | null>;
+}
+
+export class InMemoryOidcClientStore implements OidcClientStore {
+  readonly #clients = new Map<string, OidcClient>();
+
+  constructor(clients: readonly OidcClient[] = []) {
+    clients.forEach((client) => this.#clients.set(client.clientId, client));
+  }
+
+  async getClient(clientId: string): Promise<OidcClient | null> {
+    return this.#clients.get(clientId) ?? null;
+  }
+}
+
+export interface OidcAuthorizationCodeRecord {
+  readonly code: string;
+  readonly clientId: string;
+  readonly redirectUri: string;
+  readonly subject: string;
+  readonly scope: string;
+  readonly issuedAt: Date;
+  readonly expiresAt: Date;
+  readonly authTime: Date;
+  readonly nonce?: string;
+  readonly codeChallenge?: string;
+  readonly codeChallengeMethod?: OidcCodeChallengeMethod;
+  readonly sessionClaims?: Readonly<Record<string, unknown>>;
+}
+
+export type OidcAuthorizationCodeConsumeFailureReason = "not_found" | "expired";
+
+export type OidcAuthorizationCodeConsumeResult =
+  | {
+      readonly ok: true;
+      readonly record: OidcAuthorizationCodeRecord & { readonly consumedAt: Date };
+    }
+  | { readonly ok: false; readonly reason: OidcAuthorizationCodeConsumeFailureReason };
+
+export interface OidcAuthorizationCodeStore {
+  issue(record: OidcAuthorizationCodeRecord): Promise<void>;
+  consume(
+    code: string,
+    options?: { readonly now?: Date }
+  ): Promise<OidcAuthorizationCodeConsumeResult>;
+}
+
+export class InMemoryOidcAuthorizationCodeStore implements OidcAuthorizationCodeStore {
+  readonly #records = new Map<string, OidcAuthorizationCodeRecord>();
+
+  async issue(record: OidcAuthorizationCodeRecord): Promise<void> {
+    this.#records.set(record.code, record);
+  }
+
+  async consume(
+    code: string,
+    options: { readonly now?: Date } = {}
+  ): Promise<OidcAuthorizationCodeConsumeResult> {
+    const record = this.#records.get(code);
+    const now = options.now ?? new Date();
+
+    if (!record) {
+      return { ok: false, reason: "not_found" };
+    }
+
+    this.#records.delete(code);
+
+    if (record.expiresAt.getTime() <= now.getTime()) {
+      return { ok: false, reason: "expired" };
+    }
+
+    return { ok: true, record: { ...record, consumedAt: now } };
+  }
+}
+
+export type OidcCodeChallengeMethod = "plain" | "S256";
+
+export interface OidcProviderOptions {
+  readonly auth: ServerAuth;
+  readonly issuer: string;
+  readonly clients?: readonly OidcClient[];
+  readonly clientStore?: OidcClientStore;
+  readonly authorizationCodeStore?: OidcAuthorizationCodeStore;
+  readonly signingKey?: string | Buffer | KeyObject;
+  readonly keyId?: string;
+  readonly authorizationCodeTtlSeconds?: number;
+  readonly tokenTtlSeconds?: number;
+  readonly supportedScopes?: readonly string[];
+  readonly runtimeEnvironment?: RuntimeEnvironment;
+  readonly allowInsecureHttp?: boolean;
+}
+
+export interface OidcAuthorizationRequest {
+  readonly responseType: "code";
+  readonly clientId: string;
+  readonly redirectUri: string;
+  readonly scope: string;
+  readonly sessionToken: string;
+  readonly state?: string;
+  readonly nonce?: string;
+  readonly codeChallenge?: string;
+  readonly codeChallengeMethod?: OidcCodeChallengeMethod;
+  readonly now?: Date;
+}
+
+export interface OidcAuthorizationResult {
+  readonly redirectUri: string;
+  readonly code: string;
+  readonly state?: string;
+}
+
+export interface OidcTokenRequest {
+  readonly grantType: "authorization_code";
+  readonly code: string;
+  readonly redirectUri: string;
+  readonly clientId: string;
+  readonly clientSecret?: string;
+  readonly codeVerifier?: string;
+  readonly now?: Date;
+}
+
+export interface OidcTokenResult {
+  readonly tokenType: "Bearer";
+  readonly expiresIn: number;
+  readonly accessToken: string;
+  readonly idToken: string;
+  readonly scope: string;
+}
+
+export interface OidcProvider {
+  readonly issuer: string;
+  discovery(): Readonly<Record<string, unknown>>;
+  jwks(): Readonly<Record<string, unknown>>;
+  authorize(request: OidcAuthorizationRequest): Promise<OidcAuthorizationResult>;
+  token(request: OidcTokenRequest): Promise<OidcTokenResult>;
+  userinfo(
+    accessToken: string,
+    options?: { readonly now?: Date }
+  ): Promise<Readonly<Record<string, unknown>>>;
+}
+
+export interface OidcRouteHandlers {
+  discovery(): Promise<AuthRouteResponse>;
+  jwks(): Promise<AuthRouteResponse>;
+  authorize(request: AuthRouteRequest): Promise<AuthRouteResponse>;
+  token(request: AuthRouteRequest): Promise<AuthRouteResponse>;
+  userinfo(request: AuthRouteRequest): Promise<AuthRouteResponse>;
 }
 
 export interface AuthRouteCookie {
@@ -1337,6 +1507,294 @@ export function registerFastifyAuthRoutes(
   );
 }
 
+export function createOidcProvider(options: OidcProviderOptions): OidcProvider {
+  const runtimeEnvironment = getRuntimeEnvironment(options.runtimeEnvironment);
+  const issuer = normalizeIssuer(options.issuer);
+  assertProductionSafeUrl(issuer, {
+    runtimeEnvironment,
+    label: "issuer",
+    ...(options.allowInsecureHttp ? { allowInsecureHttp: options.allowInsecureHttp } : {})
+  });
+
+  const clientStore = options.clientStore ?? new InMemoryOidcClientStore(options.clients ?? []);
+  const authorizationCodeStore =
+    options.authorizationCodeStore ?? new InMemoryOidcAuthorizationCodeStore();
+  const signingKey = normalizeOidcSigningKey(options.signingKey);
+  const publicKey = createPublicKey(signingKey);
+  const keyId = options.keyId ?? oidcKeyThumbprint(publicKey);
+  const authorizationCodeTtlSeconds = options.authorizationCodeTtlSeconds ?? 5 * 60;
+  const tokenTtlSeconds = options.tokenTtlSeconds ?? 60 * 60;
+  const supportedScopes = options.supportedScopes ?? ["openid", "profile", "wallet"];
+
+  return {
+    issuer,
+    discovery() {
+      return {
+        issuer,
+        authorization_endpoint: `${issuer}/oauth2/authorize`,
+        token_endpoint: `${issuer}/oauth2/token`,
+        userinfo_endpoint: `${issuer}/oauth2/userinfo`,
+        jwks_uri: `${issuer}/.well-known/jwks.json`,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code"],
+        subject_types_supported: ["public"],
+        id_token_signing_alg_values_supported: ["RS256"],
+        token_endpoint_auth_methods_supported: [
+          "client_secret_basic",
+          "client_secret_post",
+          "none"
+        ],
+        scopes_supported: supportedScopes,
+        claims_supported: [
+          "sub",
+          "iss",
+          "aud",
+          "exp",
+          "iat",
+          "auth_time",
+          "nonce",
+          "did_identity",
+          "did_account"
+        ],
+        code_challenge_methods_supported: ["plain", "S256"]
+      };
+    },
+    jwks() {
+      return {
+        keys: [publicJwk(publicKey, keyId)]
+      };
+    },
+    async authorize(request) {
+      const now = request.now ?? new Date();
+      const client = await requireOidcClient(clientStore, request.clientId);
+
+      if (!client.redirectUris.includes(request.redirectUri)) {
+        throw new Error("OIDC redirect_uri is not registered.");
+      }
+
+      if (request.responseType !== "code") {
+        throw new Error("OIDC response_type must be code.");
+      }
+
+      const scopes = normalizeOidcScope(request.scope);
+
+      if (!scopes.includes("openid")) {
+        throw new Error("OIDC scope must include openid.");
+      }
+
+      assertOidcScopesAllowed(client, scopes);
+
+      if (request.codeChallengeMethod && !["plain", "S256"].includes(request.codeChallengeMethod)) {
+        throw new Error("OIDC code_challenge_method is unsupported.");
+      }
+
+      const session = await options.auth.verifySession(request.sessionToken, { now });
+      const code = createOidcCode();
+      await authorizationCodeStore.issue({
+        code,
+        clientId: client.clientId,
+        redirectUri: request.redirectUri,
+        subject: session.subject,
+        scope: scopes.join(" "),
+        issuedAt: now,
+        expiresAt: new Date(now.getTime() + authorizationCodeTtlSeconds * 1000),
+        authTime: session.issuedAt,
+        ...(request.nonce ? { nonce: request.nonce } : {}),
+        ...(request.codeChallenge ? { codeChallenge: request.codeChallenge } : {}),
+        ...(request.codeChallengeMethod
+          ? { codeChallengeMethod: request.codeChallengeMethod }
+          : {}),
+        sessionClaims: session.claims
+      });
+
+      return {
+        code,
+        redirectUri: oidcRedirectUri(request.redirectUri, {
+          code,
+          ...(request.state ? { state: request.state } : {})
+        }),
+        ...(request.state ? { state: request.state } : {})
+      };
+    },
+    async token(request) {
+      const now = request.now ?? new Date();
+      const client = await requireOidcClient(clientStore, request.clientId);
+      assertOidcClientSecret(client, request.clientSecret);
+
+      if (request.grantType !== "authorization_code") {
+        throw new Error("OIDC grant_type must be authorization_code.");
+      }
+
+      const consumed = await authorizationCodeStore.consume(request.code, { now });
+
+      if (!consumed.ok) {
+        throw new Error(`OIDC authorization code ${consumed.reason}.`);
+      }
+
+      const record = consumed.record;
+
+      if (record.clientId !== request.clientId) {
+        throw new Error("OIDC authorization code client mismatch.");
+      }
+
+      if (record.redirectUri !== request.redirectUri) {
+        throw new Error("OIDC authorization code redirect_uri mismatch.");
+      }
+
+      assertOidcPkce(record, request.codeVerifier);
+
+      const issuedAtSeconds = Math.floor(now.getTime() / 1000);
+      const expiresAtSeconds = issuedAtSeconds + tokenTtlSeconds;
+      const commonClaims = {
+        iss: issuer,
+        sub: record.subject,
+        aud: client.clientId,
+        iat: issuedAtSeconds,
+        exp: expiresAtSeconds,
+        auth_time: Math.floor(record.authTime.getTime() / 1000),
+        scope: record.scope,
+        ...(record.sessionClaims?.did_identity
+          ? { did_identity: record.sessionClaims.did_identity }
+          : {}),
+        ...(readOidcDidAccountClaim(record.sessionClaims)
+          ? { did_account: readOidcDidAccountClaim(record.sessionClaims) }
+          : {})
+      };
+      const idToken = signOidcJwt(
+        {
+          ...commonClaims,
+          ...(record.nonce ? { nonce: record.nonce } : {})
+        },
+        signingKey,
+        keyId
+      );
+      const accessToken = signOidcJwt(
+        {
+          ...commonClaims,
+          token_use: "access"
+        },
+        signingKey,
+        keyId
+      );
+
+      return {
+        tokenType: "Bearer",
+        expiresIn: tokenTtlSeconds,
+        accessToken,
+        idToken,
+        scope: record.scope
+      };
+    },
+    async userinfo(accessToken, userinfoOptions = {}) {
+      const payload = verifyOidcJwt(accessToken, publicKey, {
+        issuer,
+        ...(userinfoOptions.now ? { now: userinfoOptions.now } : {})
+      });
+
+      if (payload.token_use !== "access") {
+        throw new Error("OIDC access token is required.");
+      }
+
+      return {
+        sub: payload.sub,
+        ...(payload.did_identity ? { did_identity: payload.did_identity } : {}),
+        ...(payload.did_account ? { did_account: payload.did_account } : {})
+      };
+    }
+  };
+}
+
+export function createOidcRouteHandlers(
+  provider: OidcProvider,
+  options: { readonly cookieName?: string } = {}
+): OidcRouteHandlers {
+  const cookieName = options.cookieName ?? "dolphin_session";
+
+  return {
+    async discovery() {
+      return { status: 200, body: provider.discovery() };
+    },
+    async jwks() {
+      return { status: 200, body: provider.jwks() };
+    },
+    async authorize(request) {
+      const params = readRouteParams(request);
+      const sessionToken = readSessionToken(request, cookieName);
+      const responseType = requireRouteString(params.response_type, "response_type");
+      const state = readString(params.state);
+      const nonce = readString(params.nonce);
+      const codeChallenge = readString(params.code_challenge);
+      const codeChallengeMethod = readString(params.code_challenge_method);
+
+      if (!sessionToken) {
+        throw new Error("Unauthorized.");
+      }
+
+      const result = await provider.authorize({
+        responseType: responseType as "code",
+        clientId: requireRouteString(params.client_id, "client_id"),
+        redirectUri: requireRouteString(params.redirect_uri, "redirect_uri"),
+        scope: readString(params.scope) ?? "openid",
+        sessionToken,
+        ...(state ? { state } : {}),
+        ...(nonce ? { nonce } : {}),
+        ...(codeChallenge ? { codeChallenge } : {}),
+        ...(codeChallengeMethod
+          ? { codeChallengeMethod: codeChallengeMethod as OidcCodeChallengeMethod }
+          : {}),
+        ...(request.now ? { now: request.now } : {})
+      });
+
+      return {
+        status: 302,
+        headers: { location: result.redirectUri },
+        body: { redirectUri: result.redirectUri, code: result.code }
+      };
+    },
+    async token(request) {
+      const body = readBodyRecord(request.body);
+      const clientCredentials = readOidcClientCredentials(request);
+      const grantType = requireRouteString(body.grant_type, "grant_type");
+      const clientSecret = clientCredentials.clientSecret ?? readString(body.client_secret);
+      const codeVerifier = readString(body.code_verifier);
+      const result = await provider.token({
+        grantType: grantType as "authorization_code",
+        code: requireRouteString(body.code, "code"),
+        redirectUri: requireRouteString(body.redirect_uri, "redirect_uri"),
+        clientId: clientCredentials.clientId ?? requireRouteString(body.client_id, "client_id"),
+        ...(clientSecret ? { clientSecret } : {}),
+        ...(codeVerifier ? { codeVerifier } : {}),
+        ...(request.now ? { now: request.now } : {})
+      });
+
+      return {
+        status: 200,
+        body: {
+          token_type: result.tokenType,
+          expires_in: result.expiresIn,
+          access_token: result.accessToken,
+          id_token: result.idToken,
+          scope: result.scope
+        }
+      };
+    },
+    async userinfo(request) {
+      const token = readBearerToken(request);
+
+      if (!token) {
+        throw new Error("OIDC access token is required.");
+      }
+
+      return {
+        status: 200,
+        body: await provider.userinfo(token, {
+          ...(request.now ? { now: request.now } : {})
+        })
+      };
+    }
+  };
+}
+
 export function isNonceExpired(
   record: Pick<NonceRecord, "expiresAt">,
   now: Date = new Date()
@@ -1739,6 +2197,210 @@ export function decodeJwtPayload(token: string): Readonly<Record<string, unknown
   >;
 }
 
+function normalizeIssuer(issuer: string): string {
+  if (!issuer) {
+    throw new Error("OIDC issuer is required.");
+  }
+
+  return issuer.endsWith("/") ? issuer.slice(0, -1) : issuer;
+}
+
+function normalizeOidcSigningKey(signingKey?: string | Buffer | KeyObject): KeyObject {
+  if (signingKey) {
+    return typeof signingKey === "string" || Buffer.isBuffer(signingKey)
+      ? createPrivateKey(signingKey)
+      : signingKey;
+  }
+
+  return generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
+}
+
+function publicJwk(publicKey: KeyObject, keyId: string): Readonly<Record<string, unknown>> {
+  return {
+    ...(publicKey.export({ format: "jwk" }) as Readonly<Record<string, unknown>>),
+    kid: keyId,
+    use: "sig",
+    alg: "RS256"
+  };
+}
+
+function oidcKeyThumbprint(publicKey: KeyObject): string {
+  const jwk = publicKey.export({ format: "jwk" }) as Readonly<Record<string, unknown>>;
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        e: jwk.e,
+        kty: jwk.kty,
+        n: jwk.n
+      })
+    )
+    .digest("base64url");
+}
+
+function createOidcCode(): string {
+  return `doc_${randomBytes(32).toString("base64url")}`;
+}
+
+async function requireOidcClient(
+  clientStore: OidcClientStore,
+  clientId: string
+): Promise<OidcClient> {
+  const client = await clientStore.getClient(clientId);
+
+  if (!client) {
+    throw new Error("OIDC client not found.");
+  }
+
+  return client;
+}
+
+function normalizeOidcScope(scope: string): readonly string[] {
+  return scope.split(/\s+/u).filter(Boolean);
+}
+
+function readOidcDidAccountClaim(
+  claims: Readonly<Record<string, unknown>> | undefined
+): unknown | undefined {
+  if (!claims) {
+    return undefined;
+  }
+
+  if (claims.did_account) {
+    return claims.did_account;
+  }
+
+  if (
+    typeof claims.did_identity === "object" &&
+    claims.did_identity !== null &&
+    "primaryAccount" in claims.did_identity
+  ) {
+    return (claims.did_identity as Readonly<Record<string, unknown>>).primaryAccount;
+  }
+
+  return undefined;
+}
+
+function assertOidcScopesAllowed(client: OidcClient, scopes: readonly string[]): void {
+  if (!client.allowedScopes) {
+    return;
+  }
+
+  const unsupported = scopes.find((scope) => !client.allowedScopes?.includes(scope));
+
+  if (unsupported) {
+    throw new Error(`OIDC scope ${unsupported} is not allowed for this client.`);
+  }
+}
+
+function assertOidcClientSecret(client: OidcClient, clientSecret?: string): void {
+  if (!client.clientSecret) {
+    return;
+  }
+
+  if (!clientSecret) {
+    throw new Error("OIDC client_secret is required.");
+  }
+
+  assertTimingSafeEqual(clientSecret, client.clientSecret, "OIDC client_secret mismatch.");
+}
+
+function assertOidcPkce(
+  record: OidcAuthorizationCodeRecord,
+  codeVerifier: string | undefined
+): void {
+  if (!record.codeChallenge) {
+    return;
+  }
+
+  if (!codeVerifier) {
+    throw new Error("OIDC code_verifier is required.");
+  }
+
+  const actual =
+    record.codeChallengeMethod === "S256"
+      ? createHash("sha256").update(codeVerifier).digest("base64url")
+      : codeVerifier;
+
+  assertTimingSafeEqual(actual, record.codeChallenge, "OIDC code_verifier mismatch.");
+}
+
+function oidcRedirectUri(redirectUri: string, params: Readonly<Record<string, string>>): string {
+  const url = new URL(redirectUri);
+
+  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+  return url.toString();
+}
+
+function signOidcJwt(
+  payload: Readonly<Record<string, unknown>>,
+  privateKey: KeyObject,
+  keyId: string
+): string {
+  const encodedHeader = encodeJson({ alg: "RS256", typ: "JWT", kid: keyId });
+  const encodedPayload = encodeJson(payload);
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
+  const signature = cryptoSign("RSA-SHA256", Buffer.from(signingInput), privateKey).toString(
+    "base64url"
+  );
+
+  return `${signingInput}.${signature}`;
+}
+
+function verifyOidcJwt(
+  token: string,
+  publicKey: KeyObject,
+  options: { readonly issuer: string; readonly now?: Date }
+): Readonly<Record<string, unknown>> {
+  const [encodedHeader, encodedPayload, signature] = token.split(".");
+
+  if (!encodedHeader || !encodedPayload || !signature) {
+    throw new Error("Invalid OIDC JWT.");
+  }
+
+  const header = JSON.parse(Buffer.from(encodedHeader, "base64url").toString("utf8")) as Readonly<
+    Record<string, unknown>
+  >;
+
+  if (header.alg !== "RS256") {
+    throw new Error("OIDC JWT alg must be RS256.");
+  }
+
+  const valid = cryptoVerify(
+    "RSA-SHA256",
+    Buffer.from(`${encodedHeader}.${encodedPayload}`),
+    publicKey,
+    Buffer.from(signature, "base64url")
+  );
+
+  if (!valid) {
+    throw new Error("OIDC JWT signature invalid.");
+  }
+
+  const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as Readonly<
+    Record<string, unknown>
+  >;
+
+  if (payload.iss !== options.issuer) {
+    throw new Error("OIDC JWT issuer mismatch.");
+  }
+
+  if (typeof payload.sub !== "string") {
+    throw new Error("OIDC JWT subject invalid.");
+  }
+
+  const expiresAtSeconds = typeof payload.exp === "number" ? payload.exp : undefined;
+
+  if (expiresAtSeconds === undefined) {
+    throw new Error("OIDC JWT expiration invalid.");
+  }
+
+  if (expiresAtSeconds * 1000 <= (options.now ?? new Date()).getTime()) {
+    throw new Error("OIDC JWT expired.");
+  }
+
+  return payload;
+}
+
 function createNonce(): string {
   return randomBytes(16).toString("base64url");
 }
@@ -1842,8 +2504,25 @@ function readBodyRecord(body: unknown): Record<string, unknown> {
   return typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
 }
 
+function readRouteParams(request: AuthRouteRequest): Record<string, unknown> {
+  return {
+    ...readBodyRecord(request.query),
+    ...readBodyRecord(request.body)
+  };
+}
+
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function requireRouteString(value: unknown, name: string): string {
+  const result = readString(value);
+
+  if (!result) {
+    throw new Error(`OIDC ${name} is required.`);
+  }
+
+  return result;
 }
 
 function readVerifySignInRequest(body: unknown): VerifySignInRequest {
@@ -1872,6 +2551,10 @@ function readSessionToken(request: AuthRouteRequest, cookieName: string): string
     return cookieToken;
   }
 
+  return readBearerToken(request);
+}
+
+function readBearerToken(request: AuthRouteRequest): string | undefined {
   const authorization = request.headers?.authorization ?? request.headers?.Authorization;
 
   if (!authorization?.startsWith("Bearer ")) {
@@ -1879,6 +2562,29 @@ function readSessionToken(request: AuthRouteRequest, cookieName: string): string
   }
 
   return authorization.slice("Bearer ".length);
+}
+
+function readOidcClientCredentials(request: AuthRouteRequest): {
+  readonly clientId?: string;
+  readonly clientSecret?: string;
+} {
+  const authorization = request.headers?.authorization ?? request.headers?.Authorization;
+
+  if (!authorization?.startsWith("Basic ")) {
+    return {};
+  }
+
+  const decoded = Buffer.from(authorization.slice("Basic ".length), "base64").toString("utf8");
+  const separator = decoded.indexOf(":");
+
+  if (separator < 0) {
+    throw new Error("OIDC client credentials are invalid.");
+  }
+
+  return {
+    clientId: decodeURIComponent(decoded.slice(0, separator)),
+    clientSecret: decodeURIComponent(decoded.slice(separator + 1))
+  };
 }
 
 function sendExpressResponse(

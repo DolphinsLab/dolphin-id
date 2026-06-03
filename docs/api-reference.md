@@ -80,6 +80,13 @@ hooks.
   logout, and require-session handlers.
 - `createExpressAuthRoutes`: Express-like route handlers for the auth flow.
 - `registerFastifyAuthRoutes`: Fastify-like registration helper for auth routes.
+- `createOidcProvider`: OpenID Connect provider helper backed by Dolphin
+  sessions, registered clients, one-time authorization codes, and RS256
+  ID/access tokens.
+- `createOidcRouteHandlers`: framework-neutral discovery, JWKS, authorize,
+  token, and userinfo handlers.
+- `InMemoryOidcClientStore` and `InMemoryOidcAuthorizationCodeStore`:
+  development stores for OIDC relying-party clients and authorization codes.
 - `createSessionCookieOptions`: cookie defaults and production safety checks.
 - `assertProductionSafeUrl`: rejects production HTTP origins unless explicitly
   overridden.

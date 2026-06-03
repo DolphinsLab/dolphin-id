@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
 
 import { ed25519 } from "@noble/curves/ed25519";
 import { secp256k1 } from "@noble/curves/secp256k1";
@@ -14,6 +14,8 @@ import {
   assertProductionSafeUrl,
   createAuthRouteHandlers,
   createExpressAuthRoutes,
+  createOidcProvider,
+  createOidcRouteHandlers,
   createServerAuth,
   createSessionCookieOptions,
   decodeJwtPayload,
@@ -233,6 +235,167 @@ describe("auth route helpers", () => {
       "GET /dolphin/me",
       "POST /dolphin/logout"
     ]);
+  });
+});
+
+describe("OIDC provider", () => {
+  it("exposes discovery metadata and a public JWKS", () => {
+    const auth = createServerAuth({ jwtSecret: "oidc-secret" });
+    const provider = createOidcProvider({
+      auth,
+      issuer: "https://id.example.com",
+      clients: [{ clientId: "app", redirectUris: ["https://app.example.com/callback"] }],
+      runtimeEnvironment: "test"
+    });
+
+    expect(provider.discovery()).toMatchObject({
+      issuer: "https://id.example.com",
+      authorization_endpoint: "https://id.example.com/oauth2/authorize",
+      token_endpoint: "https://id.example.com/oauth2/token",
+      jwks_uri: "https://id.example.com/.well-known/jwks.json",
+      response_types_supported: ["code"],
+      id_token_signing_alg_values_supported: ["RS256"]
+    });
+    expect(provider.jwks()).toMatchObject({
+      keys: [
+        {
+          kty: "RSA",
+          use: "sig",
+          alg: "RS256"
+        }
+      ]
+    });
+  });
+
+  it("completes an authorization-code flow from a Dolphin session", async () => {
+    const auth = createServerAuth({
+      jwtSecret: "oidc-secret",
+      issuer: "https://id.example.com"
+    });
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const user = {
+      id: "evm:1:0xabc",
+      accounts: [{ chainType: "evm" as const, chainId: "1", address: "0xabc" }],
+      primaryAccount: { chainType: "evm" as const, chainId: "1", address: "0xabc" },
+      createdAt: now,
+      updatedAt: now
+    };
+    const session = auth.issueSession(user, { now });
+    const provider = createOidcProvider({
+      auth,
+      issuer: "https://id.example.com",
+      clients: [
+        {
+          clientId: "app",
+          clientSecret: "client-secret",
+          redirectUris: ["https://app.example.com/callback"],
+          allowedScopes: ["openid", "profile", "wallet"]
+        }
+      ],
+      tokenTtlSeconds: 600,
+      runtimeEnvironment: "test"
+    });
+    const routes = createOidcRouteHandlers(provider);
+    const codeVerifier = "verifier-123";
+    const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
+    const authorize = await routes.authorize({
+      query: {
+        response_type: "code",
+        client_id: "app",
+        redirect_uri: "https://app.example.com/callback",
+        scope: "openid profile wallet",
+        state: "state-123",
+        nonce: "oidc-nonce",
+        code_challenge: codeChallenge,
+        code_challenge_method: "S256"
+      },
+      cookies: { dolphin_session: session.token },
+      now
+    });
+
+    expect(authorize.status).toBe(302);
+    const redirect = new URL(String(authorize.headers?.location));
+    const code = redirect.searchParams.get("code");
+    expect(redirect.origin + redirect.pathname).toBe("https://app.example.com/callback");
+    expect(redirect.searchParams.get("state")).toBe("state-123");
+    expect(code).toBeTruthy();
+
+    const basic = Buffer.from("app:client-secret").toString("base64");
+    const token = await routes.token({
+      body: {
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: "https://app.example.com/callback",
+        code_verifier: codeVerifier
+      },
+      headers: { authorization: `Basic ${basic}` },
+      now: new Date("2026-01-01T00:00:01.000Z")
+    });
+
+    expect(token.status).toBe(200);
+    expect(token.body.token_type).toBe("Bearer");
+    expect(token.body.expires_in).toBe(600);
+
+    const [encodedHeader, encodedPayload, signature] = String(token.body.id_token).split(".");
+    const keys = provider.jwks().keys;
+    if (!encodedHeader || !encodedPayload || !signature) {
+      throw new Error("Expected a three-segment ID token.");
+    }
+    if (!Array.isArray(keys) || !keys[0]) {
+      throw new Error("Expected an OIDC public JWK.");
+    }
+    const publicKey = createPublicKey({
+      key: keys[0],
+      format: "jwk"
+    } as Parameters<typeof createPublicKey>[0]);
+    expect(
+      cryptoVerify(
+        "RSA-SHA256",
+        Buffer.from(`${encodedHeader}.${encodedPayload}`),
+        publicKey,
+        Buffer.from(signature, "base64url")
+      )
+    ).toBe(true);
+
+    const idTokenPayload = decodeJwtPayload(String(token.body.id_token));
+    expect(idTokenPayload).toMatchObject({
+      iss: "https://id.example.com",
+      sub: "evm:1:0xabc",
+      aud: "app",
+      nonce: "oidc-nonce",
+      did_identity: {
+        id: "evm:1:0xabc"
+      },
+      did_account: {
+        chainType: "evm",
+        chainId: "1",
+        address: "0xabc"
+      }
+    });
+
+    const userinfo = await routes.userinfo({
+      headers: { authorization: `Bearer ${String(token.body.access_token)}` },
+      now: new Date("2026-01-01T00:00:02.000Z")
+    });
+    expect(userinfo.body).toMatchObject({
+      sub: "evm:1:0xabc",
+      did_identity: {
+        id: "evm:1:0xabc"
+      }
+    });
+
+    await expect(
+      routes.token({
+        body: {
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: "https://app.example.com/callback",
+          code_verifier: codeVerifier
+        },
+        headers: { authorization: `Basic ${basic}` },
+        now: new Date("2026-01-01T00:00:03.000Z")
+      })
+    ).rejects.toThrow("authorization code not_found");
   });
 });
 

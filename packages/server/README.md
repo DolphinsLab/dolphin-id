@@ -28,6 +28,11 @@ address-as-user lookup, and JWT session issuing.
   response objects.
 - `registerFastifyAuthRoutes` registers the reference auth routes on a
   Fastify-like instance.
+- `createOidcProvider` and `createOidcRouteHandlers` expose Dolphin sessions as
+  an OpenID Connect provider with discovery, JWKS, authorization-code, token,
+  and userinfo handlers.
+- `InMemoryOidcClientStore` and `InMemoryOidcAuthorizationCodeStore` provide
+  development stores for registered clients and one-time authorization codes.
 - `verifyEvmSiweMessage`, `verifySuiPersonalMessage`,
   `verifySolanaSiwsMessage`, `verifyBitcoinSiwxMessage`, and
   `verifyAptosSiwxMessage` provide chain-specific SIWX signature verification
@@ -104,3 +109,48 @@ app.get("/private", expressRoutes.requireSession, privateHandler);
 
 registerFastifyAuthRoutes(fastify, { auth, jwtSecret, prefix: "/auth" });
 ```
+
+## OIDC Provider
+
+`createOidcProvider` lets an app expose the Dolphin wallet session as a standard
+OIDC authorization-code issuer. The authorize handler requires an existing
+Dolphin session cookie or bearer token, then redirects the relying party with a
+one-time code. The token handler returns RS256-signed `id_token` and
+`access_token` JWTs, and `userinfo` returns `sub` plus Dolphin wallet identity
+claims when present.
+
+Pass a stable RSA private `signingKey` in production so relying parties can
+cache JWKS safely across process restarts. Without one, Dolphin ID generates an
+ephemeral development key for the provider instance.
+
+```ts
+import { createOidcProvider, createOidcRouteHandlers, createServerAuth } from "@dolphin-id/server";
+
+const auth = createServerAuth({ jwtSecret, issuer: "https://id.example.com" });
+const oidc = createOidcProvider({
+  auth,
+  issuer: "https://id.example.com",
+  clients: [
+    {
+      clientId: "my-app",
+      clientSecret: process.env.OIDC_CLIENT_SECRET,
+      redirectUris: ["https://app.example.com/auth/callback"],
+      allowedScopes: ["openid", "profile", "wallet"]
+    }
+  ]
+});
+const routes = createOidcRouteHandlers(oidc);
+
+app.get("/.well-known/openid-configuration", async (_request, response) => {
+  response.json((await routes.discovery()).body);
+});
+app.get("/.well-known/jwks.json", async (_request, response) => {
+  response.json((await routes.jwks()).body);
+});
+```
+
+Register your framework routes so `GET /oauth2/authorize` passes query
+parameters and the Dolphin session cookie into `routes.authorize`,
+`POST /oauth2/token` passes the form body and optional Basic client
+authorization header into `routes.token`, and `GET /oauth2/userinfo` passes the
+Bearer access token into `routes.userinfo`.
