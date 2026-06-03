@@ -46,6 +46,6 @@ create_issue() {
 
 echo "Tip: run ./scripts/setup-github-tracker.sh once before creating issues."
 
-for file in docs/issues/DID-*.md; do
+for file in docs/archive/issues/DID-*.md; do
   create_issue "$file"
 done

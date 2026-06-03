@@ -247,6 +247,9 @@ cd ../python && python3 -m pip install -e '.[test]' && pytest
 
 ## Documentation
 
+Start at the [documentation index](docs/README.md), or jump to:
+
+- [Product overview](docs/product-overview.md)
 - [Getting started](docs/getting-started.md)
 - [API reference](docs/api-reference.md)
 - [Server SDKs](docs/server-sdks.md)
@@ -256,6 +259,8 @@ cd ../python && python3 -m pip install -e '.[test]' && pytest
 - [Security guide](docs/security.md)
 - [v1.0 security audit summary](docs/security-audit.md)
 - [Troubleshooting](docs/troubleshooting.md)
+- [Roadmap](docs/roadmap.md)
+- [Contributing & workflow](docs/contributing.md)
 - [v1.0.0 release notes](docs/releases/v1.0.0.md)
 
 ## Security
@@ -282,7 +287,7 @@ rather than a public issue.
 ## Contributing
 
 Contributions are welcome. The
-[development plan and collaboration workflow](development-plan-and-collaboration-workflow.md)
+[contributing & collaboration workflow](docs/contributing.md)
 describes branch, review, and release conventions. Before opening a pull
 request, run the [development](#development) checks (`typecheck`, `test`,
 `lint`, `build`) and add a changeset with `pnpm changeset` when your change

@@ -1,4 +1,6 @@
-# Dolphin ID Issue Backlog
+# Dolphin ID Issue Backlog (Archived)
+
+> **历史存档。** 下列 DID-000 … DID-024 均已在 `v1.0.0` 发布时完成，保留此目录仅作为开发轨迹存档。当前路线规划见 [`docs/roadmap.md`](../../roadmap.md)，协作流程见 [`docs/contributing.md`](../../contributing.md)。
 
 本目录是 Dolphin ID 的 Issue 草稿库。每个文件对应一个可创建到远端 issue tracker 的工作项，开发时必须通过对应 MR/PR 合并。
 
