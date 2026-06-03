@@ -86,7 +86,7 @@ type StorageOperation =
   | { readonly type: "oidcCode.consume"; readonly code: string; readonly now?: string }
   | { readonly type: "oidcClient.get"; readonly clientId: string }
   | { readonly type: "oidcClient.list" }
-  | { readonly type: "oidcClient.upsert"; readonly client: OidcClient }
+  | { readonly type: "oidcClient.upsert"; readonly client: StoredOidcClient }
   | { readonly type: "oidcClient.delete"; readonly clientId: string }
   | { readonly type: "registration.consume"; readonly key: string; readonly limit: number };
 
@@ -121,6 +121,11 @@ interface AdminOidcClient {
   readonly hasClientSecret: boolean;
   readonly source: "managed" | "bootstrap";
 }
+
+type StoredOidcClient = OidcClient & {
+  readonly ownerSubject?: string;
+  readonly createdAt?: string;
+};
 
 const STORAGE_OBJECT_NAME = "global";
 const OIDC_CLIENT_INDEX_KEY = "oidc-client:index";
@@ -408,16 +413,16 @@ export class DolphinOidcStorage {
     return { ok: true, record: { ...record, consumedAt: now.toISOString() } };
   }
 
-  private async listOidcClients(): Promise<readonly OidcClient[]> {
+  private async listOidcClients(): Promise<readonly StoredOidcClient[]> {
     const clientIds =
       (await this.state.storage.get<readonly string[]>(OIDC_CLIENT_INDEX_KEY)) ?? [];
     const clients = await Promise.all(
-      clientIds.map((clientId) => this.state.storage.get<OidcClient>(oidcClientKey(clientId)))
+      clientIds.map((clientId) => this.state.storage.get<StoredOidcClient>(oidcClientKey(clientId)))
     );
-    return clients.filter((client): client is OidcClient => Boolean(client));
+    return clients.filter((client): client is StoredOidcClient => Boolean(client));
   }
 
-  private async upsertOidcClient(client: OidcClient): Promise<void> {
+  private async upsertOidcClient(client: StoredOidcClient): Promise<void> {
     await this.state.storage.put(oidcClientKey(client.clientId), client);
     const clientIds = new Set(
       (await this.state.storage.get<readonly string[]>(OIDC_CLIENT_INDEX_KEY)) ?? []
@@ -669,9 +674,17 @@ async function handlePublicRegisterClient(
   env: Env,
   corsHeaders: HeadersInit
 ): Promise<Response> {
+  const session = await readRegisterSession(request, env);
+  if (!session) {
+    return json(
+      { error: "Sign in with Dolphin ID before registering an OIDC client." },
+      { status: 401, headers: corsHeaders }
+    );
+  }
+
   const body = await readJsonObject(request);
   const client = normalizePublicClientInput(body);
-  const quota = await consumePublicRegistrationQuota(request, env);
+  const quota = await consumePublicRegistrationQuota(session.subject, env);
 
   if (!quota.ok) {
     return json(
@@ -684,7 +697,9 @@ async function handlePublicRegisterClient(
   const storedClient = {
     ...client,
     clientId: createClientId(),
-    clientSecret
+    clientSecret,
+    ownerSubject: session.subject,
+    createdAt: new Date().toISOString()
   };
 
   await workerOidcClientStore(env).upsertClient(storedClient);
@@ -696,6 +711,29 @@ async function handlePublicRegisterClient(
     },
     { status: 201, headers: corsHeaders }
   );
+}
+
+async function readRegisterSession(
+  request: Request,
+  env: Env
+): Promise<{ readonly subject: string } | null> {
+  try {
+    const context = createWorkerContext(env);
+    const response = await context.authRoutes.me({
+      body: {},
+      query: {},
+      cookies: parseCookies(request.headers.get("cookie") ?? ""),
+      headers: {
+        authorization: request.headers.get("authorization") ?? undefined,
+        Authorization: request.headers.get("Authorization") ?? undefined
+      }
+    });
+    const body = response.body as { readonly session?: { readonly subject?: unknown } };
+    const subject = body.session?.subject;
+    return typeof subject === "string" ? { subject } : null;
+  } catch {
+    return null;
+  }
 }
 
 async function handleAdminListClients(
@@ -769,18 +807,14 @@ function workerOidcClientStore(env: Env): WorkerOidcClientStore {
 }
 
 async function consumePublicRegistrationQuota(
-  request: Request,
+  subject: string,
   env: Env
 ): Promise<{ readonly ok: boolean; readonly remaining: number }> {
   const limit = Math.max(1, Number.parseInt(env.DOLPHIN_PUBLIC_REGISTRATION_LIMIT ?? "10", 10));
-  const ip =
-    request.headers.get("cf-connecting-ip") ??
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    "unknown";
   const day = new Date().toISOString().slice(0, 10);
   const result = await storageClient(env).send({
     type: "registration.consume",
-    key: `${day}:${ip}`,
+    key: `${day}:${subject}`,
     limit
   });
 
@@ -1203,9 +1237,9 @@ function registrationPage(origin: string, corsHeaders: HeadersInit = {}): Respon
         font-weight: 700;
         color: #404040;
       }
+      input,
       textarea {
         width: 100%;
-        min-height: 92px;
         border: 1px solid #c8c8c0;
         border-radius: 6px;
         padding: 10px 12px;
@@ -1213,6 +1247,9 @@ function registrationPage(origin: string, corsHeaders: HeadersInit = {}): Respon
         resize: vertical;
         background: #fff;
         color: #171717;
+      }
+      textarea {
+        min-height: 92px;
       }
       button {
         border: 1px solid #0f766e;
@@ -1222,6 +1259,11 @@ function registrationPage(origin: string, corsHeaders: HeadersInit = {}): Respon
         color: #fff;
         font-weight: 700;
         cursor: pointer;
+      }
+      button:disabled {
+        border-color: #bdbdb6;
+        background: #d8d8d0;
+        cursor: not-allowed;
       }
       code,
       pre {
@@ -1264,7 +1306,13 @@ function registrationPage(origin: string, corsHeaders: HeadersInit = {}): Respon
         <a href="/">Issuer home</a>
       </header>
 
-      <section>
+      <section id="authSection">
+        <p id="sessionStatus">Checking Dolphin ID session...</p>
+        <button id="signIn" type="button">Connect wallet & sign in</button>
+        <div id="authMessage" class="notice hidden"></div>
+      </section>
+
+      <section id="registerSection" class="hidden">
         <label>
           Redirect URIs
           <textarea id="redirectUris" placeholder="https://app.example.com/auth/callback"></textarea>
@@ -1285,8 +1333,14 @@ wallet</textarea>
       </section>
     </main>
     <script>
+      let signedIn = false;
+      let currentAccount = "";
+      const authMessage = document.querySelector("#authMessage");
       const message = document.querySelector("#message");
       const result = document.querySelector("#result");
+      const registerSection = document.querySelector("#registerSection");
+      const sessionStatus = document.querySelector("#sessionStatus");
+      const signInButton = document.querySelector("#signIn");
 
       function lines(value) {
         return value.split(/\\n|,/).map((item) => item.trim()).filter(Boolean);
@@ -1298,9 +1352,130 @@ wallet</textarea>
         message.textContent = text;
       }
 
+      function showAuth(text, isError = false) {
+        authMessage.classList.remove("hidden");
+        authMessage.style.borderColor = isError ? "#f0a8a0" : "#99d4c9";
+        authMessage.textContent = text;
+      }
+
+      async function refreshSession() {
+        const response = await fetch("/auth/me");
+        if (!response.ok) {
+          signedIn = false;
+          registerSection.classList.add("hidden");
+          signInButton.disabled = false;
+          sessionStatus.textContent = "Sign in with a wallet before registering an OIDC client.";
+          return;
+        }
+
+        const data = await response.json();
+        signedIn = true;
+        currentAccount = data.session?.subject ?? "";
+        registerSection.classList.remove("hidden");
+        signInButton.disabled = true;
+        sessionStatus.textContent = "Signed in as " + currentAccount + ".";
+      }
+
+      function siweMessage(input) {
+        return [
+          input.domain + " wants you to sign in with your Ethereum account:",
+          input.address,
+          "",
+          input.statement,
+          "",
+          "URI: " + input.uri,
+          "Version: 1",
+          "Chain ID: " + input.chainId,
+          "Nonce: " + input.nonce,
+          "Issued At: " + input.issuedAt,
+          "Expiration Time: " + input.expirationTime
+        ].join("\\n");
+      }
+
+      async function signInWithEvm() {
+        if (!window.ethereum) {
+          throw new Error("No injected EVM wallet found.");
+        }
+
+        const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+        const address = accounts[0];
+        const chainIdHex = await window.ethereum.request({ method: "eth_chainId" });
+        const chainId = String(Number.parseInt(chainIdHex, 16));
+        const nonceResponse = await fetch("/auth/nonce", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            domain: location.host,
+            chainType: "evm",
+            address,
+            walletName: "Injected EVM Wallet"
+          })
+        });
+        const nonceData = await nonceResponse.json();
+        if (!nonceResponse.ok) throw new Error(nonceData.error || "Could not issue nonce.");
+
+        const issuedAt = new Date().toISOString();
+        const expirationTime = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+        const statement = "Sign in to register an OIDC client for Dolphin ID.";
+        const raw = siweMessage({
+          domain: location.host,
+          address,
+          statement,
+          uri: location.origin + "/register",
+          chainId,
+          nonce: nonceData.nonce,
+          issuedAt,
+          expirationTime
+        });
+        const signature = await window.ethereum.request({
+          method: "personal_sign",
+          params: [raw, address]
+        });
+        const verifyResponse = await fetch("/auth/verify", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            nonce: nonceData.nonce,
+            signature,
+            message: {
+              format: "eip4361",
+              chainType: "evm",
+              domain: location.host,
+              address,
+              uri: location.origin + "/register",
+              version: "1",
+              chainId,
+              nonce: nonceData.nonce,
+              issuedAt,
+              expirationTime,
+              statement,
+              raw
+            }
+          })
+        });
+        const verifyData = await verifyResponse.json();
+        if (!verifyResponse.ok) throw new Error(verifyData.error || "Sign-in failed.");
+      }
+
+      signInButton.addEventListener("click", async () => {
+        signInButton.disabled = true;
+        try {
+          await signInWithEvm();
+          await refreshSession();
+          showAuth("Signed in.");
+        } catch (error) {
+          signInButton.disabled = false;
+          showAuth(error.message, true);
+        }
+      });
+
       document.querySelector("#register").addEventListener("click", async () => {
         result.classList.add("hidden");
         result.textContent = "";
+        if (!signedIn) {
+          show("Sign in with Dolphin ID before registering.", true);
+          return;
+        }
         try {
           const response = await fetch("/register/api/clients", {
             method: "POST",
@@ -1326,6 +1501,8 @@ wallet</textarea>
           show(error.message, true);
         }
       });
+
+      refreshSession().catch(() => undefined);
     </script>
   </body>
 </html>`,

@@ -2,6 +2,8 @@ import { generateKeyPairSync } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
+import { issueJwtSession } from "@dolphin-id/server";
+
 import { DolphinOidcStorage, handleRequest, type Env } from "./index";
 
 describe("OIDC Worker", () => {
@@ -23,6 +25,7 @@ describe("OIDC Worker", () => {
 
     expect(response.status).toBe(200);
     expect(html).toContain("Register OIDC Client");
+    expect(html).toContain("Connect wallet & sign in");
     expect(html).toContain("/register/api/clients");
   });
 
@@ -138,7 +141,26 @@ describe("OIDC Worker", () => {
     });
   });
 
-  it("publicly registers OIDC clients without an admin token", async () => {
+  it("requires a Dolphin session before public client registration", async () => {
+    const response = await handleRequest(
+      new Request("https://id.example.com/register/api/clients", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          redirectUris: ["https://public.example.com/callback"],
+          allowedScopes: ["openid", "profile"]
+        })
+      }),
+      fakeEnv()
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      error: "Sign in with Dolphin ID before registering an OIDC client."
+    });
+  });
+
+  it("publicly registers OIDC clients with a Dolphin session but without an admin token", async () => {
     const env = fakeEnv({ DOLPHIN_OIDC_CLIENTS: "[]" }) as Env & {
       DOLPHIN_OIDC_ADMIN_TOKEN?: string;
     };
@@ -148,7 +170,7 @@ describe("OIDC Worker", () => {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "cf-connecting-ip": "203.0.113.10"
+          cookie: sessionCookie()
         },
         body: JSON.stringify({
           redirectUris: ["https://public.example.com/callback"],
@@ -187,7 +209,7 @@ describe("OIDC Worker", () => {
     const response = await handleRequest(
       new Request("https://id.example.com/register/api/clients", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", cookie: sessionCookie() },
         body: JSON.stringify({
           redirectUris: ["http://evil.example.com/callback"],
           allowedScopes: ["openid"]
@@ -273,6 +295,16 @@ class InMemoryDurableObjectStorage {
   async delete(key: string): Promise<boolean> {
     return this.#values.delete(key);
   }
+}
+
+function sessionCookie(subject = "evm:1:0x0000000000000000000000000000000000000001"): string {
+  const session = issueJwtSession({
+    subject,
+    secret: "test-jwt-secret-with-enough-length",
+    claims: { did_session_version: 0 }
+  });
+
+  return `dolphin_session=${session.token}`;
 }
 
 function testPrivateKey(): string {

@@ -50,7 +50,8 @@ Object, so normal registration does not require editing secrets or redeploying.
 
 ## Register OIDC Clients
 
-Public relying parties can open `/register` and self-register:
+Public relying parties can open `/register`, sign in with Dolphin ID, and
+self-register:
 
 - one or more `redirectUris`
 - allowed scopes, usually `openid`, `profile`, and `wallet`
@@ -58,7 +59,8 @@ Public relying parties can open `/register` and self-register:
 The public registration endpoint generates the `clientId` and `clientSecret`.
 Generated client secrets are shown only once after registration. Public
 registration validates redirect URIs, limits each request to five redirect URIs,
-and rate-limits registrations per IP.
+requires a Dolphin session, and rate-limits registrations per signed-in
+developer identity.
 
 Admins can open `/admin`, enter `DOLPHIN_OIDC_ADMIN_TOKEN`, then list, create,
 or delete clients. Admin-created clients may use a custom `clientId` and
