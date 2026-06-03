@@ -14,6 +14,10 @@ Self-hosted OpenID Connect issuer for Dolphin ID on Cloudflare Workers.
 - `GET /oauth2/authorize`
 - `POST /oauth2/token`
 - `GET /oauth2/userinfo`
+- `GET /admin`
+- `GET /admin/api/clients`
+- `POST /admin/api/clients`
+- `DELETE /admin/api/clients/:clientId`
 
 The auth endpoints establish a Dolphin wallet session. The OIDC endpoints expose
 that session through the standard authorization-code flow.
@@ -26,7 +30,7 @@ Set these in Cloudflare before serving traffic:
 wrangler secret put DOLPHIN_JWT_SECRET --cwd apps/oidc-worker
 wrangler secret put DOLPHIN_ISSUER --cwd apps/oidc-worker
 wrangler secret put DOLPHIN_OIDC_SIGNING_KEY --cwd apps/oidc-worker
-wrangler secret put DOLPHIN_OIDC_CLIENTS --cwd apps/oidc-worker
+wrangler secret put DOLPHIN_OIDC_ADMIN_TOKEN --cwd apps/oidc-worker
 ```
 
 `DOLPHIN_ISSUER` must be the public origin of this Worker, for example
@@ -38,7 +42,25 @@ wrangler secret put DOLPHIN_OIDC_CLIENTS --cwd apps/oidc-worker
 openssl genrsa 2048
 ```
 
-`DOLPHIN_OIDC_CLIENTS` is a JSON array:
+`DOLPHIN_OIDC_ADMIN_TOKEN` protects the built-in client registration page at
+`/admin`. Use a long random value. The admin page stores registered OIDC clients
+in the Worker Durable Object, so normal client registration does not require
+editing secrets or redeploying.
+
+## Register OIDC Clients
+
+Open `/admin`, enter `DOLPHIN_OIDC_ADMIN_TOKEN`, and register the relying party:
+
+- `clientId`
+- one or more `redirectUris`
+- optional `clientSecret` (leave blank to generate one)
+- allowed scopes, usually `openid`, `profile`, and `wallet`
+
+Generated client secrets are shown only once after registration.
+
+Optional bootstrap clients can still be supplied with `DOLPHIN_OIDC_CLIENTS`.
+This is useful for immutable deployments or emergency recovery, but it is not
+required for normal registration. The value is a JSON array:
 
 ```json
 [
