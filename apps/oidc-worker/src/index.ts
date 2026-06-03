@@ -204,6 +204,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       return json({ ok: true }, { headers: corsHeaders });
     }
 
+    if (request.method === "GET" && url.pathname === "/dashboard/api/status") {
+      return json(dashboardStatus(request, env), { headers: corsHeaders });
+    }
+
     const context = createWorkerContext(env);
 
     if (request.method === "GET" && url.pathname === "/.well-known/openid-configuration") {
@@ -1141,6 +1145,44 @@ function json(
   });
 }
 
+function dashboardStatus(request: Request, env: Env) {
+  const url = new URL(request.url);
+  const issuer = env.DOLPHIN_ISSUER ?? url.origin;
+  const allowedOrigins = parseAllowedOrigins(env);
+  const requestOrigin = request.headers.get("origin");
+
+  return {
+    ok: true,
+    issuer,
+    runtimeEnvironment: env.DOLPHIN_RUNTIME_ENVIRONMENT ?? "production",
+    configured: {
+      jwtSecret: Boolean(env.DOLPHIN_JWT_SECRET),
+      oidcSigningKey: Boolean(env.DOLPHIN_OIDC_SIGNING_KEY),
+      adminToken: Boolean(env.DOLPHIN_OIDC_ADMIN_TOKEN),
+      allowedOrigins: allowedOrigins.length
+    },
+    cors: {
+      requestOrigin,
+      requestOriginAllowed: requestOrigin ? allowedOrigins.includes(requestOrigin) : null,
+      allowedOrigins
+    },
+    endpoints: {
+      health: `${issuer}/health`,
+      nonce: `${issuer}/auth/nonce`,
+      verify: `${issuer}/auth/verify`,
+      me: `${issuer}/auth/me`,
+      refresh: `${issuer}/auth/refresh`,
+      logout: `${issuer}/auth/logout`,
+      discovery: `${issuer}/.well-known/openid-configuration`,
+      jwks: `${issuer}/.well-known/jwks.json`,
+      authorize: `${issuer}/oauth2/authorize`,
+      token: `${issuer}/oauth2/token`,
+      userinfo: `${issuer}/oauth2/userinfo`,
+      oidcClients: `${issuer}/admin/api/clients`
+    }
+  };
+}
+
 function landingPage(origin: string, corsHeaders: HeadersInit = {}): Response {
   const discoveryUrl = `${origin}/.well-known/openid-configuration`;
   const jwksUrl = `${origin}/.well-known/jwks.json`;
@@ -2050,12 +2092,7 @@ wallet</textarea>
 }
 
 function corsHeadersFor(request: Request, env: Env): HeadersInit {
-  const allowed = new Set(
-    (env.DOLPHIN_ALLOWED_ORIGINS ?? "")
-      .split(",")
-      .map((origin) => origin.trim())
-      .filter(Boolean)
-  );
+  const allowed = new Set(parseAllowedOrigins(env));
   const origin = request.headers.get("origin");
 
   if (!origin || !allowed.has(origin)) {
@@ -2065,10 +2102,17 @@ function corsHeadersFor(request: Request, env: Env): HeadersInit {
   return {
     "access-control-allow-origin": origin,
     "access-control-allow-credentials": "true",
-    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
     "access-control-allow-headers": "authorization,content-type",
     vary: "origin"
   };
+}
+
+function parseAllowedOrigins(env: Env): readonly string[] {
+  return (env.DOLPHIN_ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 }
 
 function serializeCookie(cookie: AuthRouteCookie): string {
@@ -2295,7 +2339,7 @@ function parseOptionalDate(value: string | undefined): Date | undefined {
 
 function workerCookieOptions(env: Env) {
   return {
-    sameSite: "lax" as const,
+    sameSite: "none" as const,
     runtimeEnvironment: env.DOLPHIN_RUNTIME_ENVIRONMENT ?? "production",
     allowInsecureHttp: env.DOLPHIN_ALLOW_INSECURE_HTTP === "true",
     ...(env.DOLPHIN_ALLOW_INSECURE_HTTP === "true" ? { secure: false } : {})

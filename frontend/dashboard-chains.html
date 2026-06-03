@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Dolphin ID · Chains</title><link rel="stylesheet" href="styles.css" /></head>
+<body>
+  <header class="nav"><div class="container nav-inner"><a class="brand" href="index.html">Dolphin ID Hosted</a><nav class="nav-links"><a href="dashboard-overview.html">Overview</a><a href="dashboard-setup.html">Setup</a><a href="docs-api-reference.html">Adapter spec</a></nav></div></header>
+  <main class="shell">
+    <aside class="sidebar"><p class="eyebrow">CONFIG</p><h3>Chains</h3><nav class="side-links"><a href="dashboard-overview.html">Overview</a><a href="dashboard-setup.html">Setup</a><a class="active" href="dashboard-chains.html">Chains</a></nav></aside>
+    <section class="main-pane" data-od-id="chains">
+      <div class="toolbar"><div><p class="eyebrow">CHAIN CONFIG</p><h1 style="font-size: clamp(44px, 7vw, 96px);">Enable only what the app can verify.</h1></div><button class="btn btn-primary">SAVE CHAINS</button></div>
+      <div class="grid grid-2">
+        <div class="chain-card"><div><h3>EVM</h3><p class="muted">chainId, injected wallets, WalletConnect.</p></div><button class="switch active" aria-label="Toggle EVM"></button></div>
+        <div class="chain-card"><div><h3>Sui</h3><p class="muted">network, wallet standard, signature scope.</p></div><button class="switch active" aria-label="Toggle Sui"></button></div>
+        <div class="chain-card"><div><h3>Solana</h3><p class="muted">cluster, wallet adapter, message encoding.</p></div><button class="switch" aria-label="Toggle Solana"></button></div>
+        <div class="chain-card"><div><h3>Bitcoin</h3><p class="muted">address type, wallet capabilities, signing format.</p></div><button class="switch" aria-label="Toggle Bitcoin"></button></div>
+        <div class="chain-card"><div><h3>Aptos</h3><p class="muted">network, account address, wallet events.</p></div><button class="switch" aria-label="Toggle Aptos"></button></div>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

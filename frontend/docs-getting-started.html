@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Dolphin ID · Getting Started</title><link rel="stylesheet" href="styles.css" /></head>
+<body>
+  <header class="nav"><div class="container nav-inner"><a class="brand" href="index.html">Dolphin ID Docs</a><nav class="nav-links"><a href="landing.html">Home</a><a href="docs-api-reference.html">API</a><a href="dashboard-setup.html">Setup</a></nav></div></header>
+  <main class="shell">
+    <aside class="sidebar"><p class="eyebrow">DOCS</p><h3>Getting started</h3><nav class="side-links"><a class="active" href="docs-getting-started.html">Quick start</a><a href="docs-api-reference.html">API reference</a><a href="dashboard-setup.html">Hosted setup</a><a href="playground.html">Playground</a></nav></aside>
+    <section class="main-pane" data-od-id="getting-started">
+      <div class="toolbar"><div><p class="eyebrow">QUICK START</p><h1 style="font-size: clamp(44px, 7vw, 96px);">Install, configure, verify.</h1></div><button class="btn btn-ghost" data-copy="#quick-code" data-label="COPY COMMANDS">COPY COMMANDS</button></div>
+      <div class="grid grid-2">
+        <div class="panel terminal"><div class="terminal-head"><span class="meta">commands</span></div><div class="terminal-body" id="quick-code"><div class="line"><span class="prompt">$</span><span>pnpm add @dolphin-id/react @dolphin-id/ui</span></div><div class="line"><span class="prompt">$</span><span>pnpm add @dolphin-id/server @dolphin-id/hosted</span></div><div class="line"><span class="prompt">$</span><span>dolphin-id create --framework next --chains evm,sui --auth hosted</span></div></div></div>
+        <div class="flow">
+          <div class="flow-step"><span class="step-index">01</span><p>Choose adapters for the chains your dApp supports.</p></div>
+          <div class="flow-step"><span class="step-index">02</span><p>Wrap the app in DolphinProvider and mount the UI package components.</p></div>
+          <div class="flow-step"><span class="step-index">03</span><p>Expose /auth/nonce, /auth/verify, /auth/session and /auth/logout on the server.</p></div>
+        </div>
+      </div>
+      <div class="section" data-od-id="provider-example">
+        <p class="eyebrow">REACT ENTRY</p>
+        <div class="panel terminal"><div class="terminal-body"><div class="line"><span class="prompt">import</span><span>{ DolphinProvider, ConnectButton } from "@dolphin-id/react";</span></div><div class="line"><span class="prompt">use</span><span>&lt;DolphinProvider projectId="proj_..." authMode="hosted"&gt;</span></div><div class="line"><span class="prompt">render</span><span>&lt;ConnectButton /&gt;</span></div></div></div>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

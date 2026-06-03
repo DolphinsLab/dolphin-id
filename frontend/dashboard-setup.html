@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Dolphin ID · Setup Wizard</title><link rel="stylesheet" href="styles.css" /></head>
+<body>
+  <header class="nav"><div class="container nav-inner"><a class="brand" href="index.html">Dolphin ID Hosted</a><nav class="nav-links"><a href="docs-getting-started.html">Docs</a><a href="dashboard-projects.html">Projects</a><a href="playground.html">Playground</a></nav></div></header>
+  <main class="shell">
+    <aside class="sidebar"><p class="eyebrow">SETUP</p><h3>Integration wizard</h3><nav class="side-links"><a href="dashboard-projects.html">Projects</a><a class="active" href="dashboard-setup.html">Setup wizard</a><a href="dashboard-chains.html">Chains</a><a href="embedded-login.html">Login UI</a></nav></aside>
+    <section class="main-pane" data-od-id="setup-wizard">
+      <div class="toolbar"><div><p class="eyebrow">HOSTED SETUP</p><h1 style="font-size: clamp(44px, 7vw, 96px);">Generate the exact integration path.</h1></div><button class="btn btn-ghost" data-copy="#setup-code" data-label="COPY CONFIG">COPY CONFIG</button></div>
+      <div data-tabs>
+        <div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="true" aria-controls="tab-next">NEXT.JS</button><button class="tab" role="tab" aria-selected="false" aria-controls="tab-react">REACT SPA</button><button class="tab" role="tab" aria-selected="false" aria-controls="tab-server">SERVER</button></div>
+        <div id="tab-next" class="tab-panel" role="tabpanel"><div class="grid grid-2"><div class="panel terminal"><div class="terminal-body" id="setup-code"><div class="line"><span class="prompt">$</span><span>dolphin-id create --framework next --chains evm,sui --auth hosted</span></div><div class="line"><span class="prompt">env</span><span>DOLPHIN_PROJECT_ID=proj_...</span></div><div class="line"><span class="prompt">env</span><span>DOLPHIN_HOSTED_KEY=created once in API Keys</span></div></div></div><div class="notice">The wizard should output install commands, provider config and server endpoint wiring from one source of truth.</div></div></div>
+        <div id="tab-react" class="tab-panel" role="tabpanel" hidden><div class="notice">React SPA mode keeps session recovery client-side but still verifies signatures through hosted or self-hosted endpoints.</div></div>
+        <div id="tab-server" class="tab-panel" role="tabpanel" hidden><div class="notice">Server mode maps nonce, verify, session, logout and refresh behavior to your backend framework.</div></div>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

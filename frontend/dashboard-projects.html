@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Dolphin ID · Projects</title><link rel="stylesheet" href="styles.css" /></head>
+<body>
+  <header class="nav"><div class="container nav-inner"><a class="brand" href="index.html">Dolphin ID Hosted</a><nav class="nav-links"><a href="dashboard-overview.html">Overview</a><a href="dashboard-setup.html">Setup</a><a href="dashboard-chains.html">Chains</a></nav></div></header>
+  <main class="shell">
+    <aside class="sidebar"><p class="eyebrow">HOSTED</p><h3>Workspace</h3><nav class="side-links"><a class="active" href="dashboard-projects.html">Projects</a><a href="dashboard-overview.html">Project overview</a><a href="dashboard-setup.html">Setup wizard</a><a href="dashboard-chains.html">Chains</a></nav></aside>
+    <section class="main-pane" data-od-id="projects">
+      <div class="toolbar"><div><p class="eyebrow">PROJECTS</p><h1 style="font-size: clamp(44px, 7vw, 96px);">Hosted auth projects.</h1></div><a class="btn btn-primary" href="dashboard-setup.html">NEW PROJECT</a></div>
+      <div class="panel"><table class="table">
+        <thead><tr><th>Name</th><th>Environment</th><th>Chains</th><th>Domains</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><a href="dashboard-overview.html">Dolphin ID Demo</a></td><td>Staging</td><td>EVM, Sui</td><td>localhost, demo app</td><td><span class="status">configured</span></td></tr>
+          <tr><td>Creator tipping app</td><td>Sandbox</td><td>EVM, Solana, Aptos</td><td>needs allowlist</td><td><span class="status">setup needed</span></td></tr>
+          <tr><td>DAO membership portal</td><td>Draft</td><td>Bitcoin</td><td>not set</td><td><span class="status">draft</span></td></tr>
+        </tbody>
+      </table></div>
+      <section class="section" data-od-id="create-project"><div class="grid grid-2"><div><p class="eyebrow">CREATE FLOW</p><h2>Project setup asks for the fields that affect verification.</h2></div><div class="grid"><div class="field"><label>Project name</label><input class="input" value="Dolphin ID Demo" /></div><div class="field"><label>Allowed domain</label><input class="input" value="localhost:3000" /></div><div class="field"><label>Auth mode</label><select class="select"><option>Hosted nonce + hosted session</option><option>Self-hosted endpoints</option></select></div></div></div></section>
+    </section>
+  </main>
+</body>
+</html>

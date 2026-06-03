@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Dolphin ID · Debug Panel</title><link rel="stylesheet" href="styles.css" /></head>
+<body>
+  <header class="nav"><div class="container nav-inner"><a class="brand" href="index.html">Dolphin ID Debug</a><nav class="nav-links"><a href="playground.html">Playground</a><a href="docs-api-reference.html">API</a><a href="dashboard-overview.html">Hosted</a></nav></div></header>
+  <main class="shell">
+    <aside class="sidebar"><p class="eyebrow">DEBUG</p><h3>Runtime inspector</h3><div class="field" style="margin-top: 24px;"><label>Filter events</label><input class="input" data-filter placeholder="nonce, session, wallet" /></div></aside>
+    <section class="main-pane" data-od-id="debug-panel">
+      <div class="toolbar"><div><p class="eyebrow">SDK STATE</p><h1 style="font-size: clamp(44px, 7vw, 96px);">Inspect the auth runtime.</h1></div><button class="btn btn-ghost" data-copy="#siwx-message" data-label="COPY SIWX">COPY SIWX</button></div>
+      <div class="grid grid-2">
+        <div class="panel"><div class="panel-head"><span class="meta">state</span><span class="status">mock wallet</span></div><table class="table"><tbody><tr><td>Wallets</td><td>EVM injected, Sui standard</td></tr><tr><td>Accounts</td><td>Waiting for connect</td></tr><tr><td>Session</td><td>None</td></tr><tr><td>Identity</td><td>Not issued</td></tr></tbody></table></div>
+        <div class="panel terminal"><div class="terminal-head"><span class="meta">SIWX preview</span></div><div class="terminal-body" id="siwx-message"><div class="line"><span class="prompt">domain</span><span>localhost:3000</span></div><div class="line"><span class="prompt">nonce</span><span>issued by hosted endpoint</span></div><div class="line"><span class="prompt">chain</span><span>selected adapter chainId</span></div><div class="line"><span class="prompt">exp</span><span>configured project expiration time</span></div></div></div>
+      </div>
+      <section class="section" data-od-id="event-stream"><div class="toolbar"><div><p class="eyebrow">EVENTS</p><h2>Wallet and session timeline.</h2></div></div><div class="list"><article class="row" data-filter-row><span class="meta">wallet</span><div><h3>wallets refreshed</h3><p class="muted">Adapter discovery returned installed and installable wallets.</p></div><span class="meta">idle</span></article><article class="row" data-filter-row><span class="meta">nonce</span><div><h3>nonce requested</h3><p class="muted">Hosted service checks domain allowlist before issuing.</p></div><span class="meta">pending</span></article><article class="row" data-filter-row><span class="meta">session</span><div><h3>session recovered</h3><p class="muted">Refresh strategy depends on project auth settings.</p></div><span class="meta">waiting</span></article></div></section>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

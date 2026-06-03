@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dolphin ID · Developer Journey</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="nav">
+      <div class="container nav-inner">
+        <a class="brand" href="index.html">Dolphin ID</a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="landing.html">官网</a>
+          <a href="docs-getting-started.html">文档</a>
+          <a href="dashboard-projects.html">Hosted</a>
+          <a href="embedded-login.html">Login UI</a>
+          <a href="playground.html">Playground</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero" data-od-id="launcher-hero">
+        <div class="container hero-grid">
+          <div>
+            <p class="eyebrow">DEVELOPER JOURNEY · HOSTED AUTH</p>
+            <h1>Multi-chain login infrastructure for teams shipping dApps.</h1>
+            <p class="lead" style="margin-top: 24px;">从官网认知、文档接入、Hosted 项目配置，到嵌入式登录组件和调试工具，这一版把开发者“看到产品 → 创建项目 → 完成接入”的主线串起来。</p>
+            <div class="hero-actions">
+              <a class="btn btn-primary" href="landing.html">START TOUR</a>
+              <a class="btn btn-ghost" href="dashboard-setup.html">OPEN SETUP</a>
+            </div>
+          </div>
+          <div class="panel terminal">
+            <div class="terminal-head">
+              <span class="meta">integration path</span>
+              <span class="status">ready</span>
+            </div>
+            <div class="terminal-body">
+              <div class="line"><span class="prompt">01</span><span>Open homepage and choose hosted auth.</span></div>
+              <div class="line"><span class="prompt">02</span><span>Install @dolphin-id/react and configure adapters.</span></div>
+              <div class="line"><span class="prompt">03</span><span>Create project, allow domains, enable chains.</span></div>
+              <div class="line"><span class="prompt">04</span><span>Preview ConnectButton and inspect session state.</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" data-od-id="screen-map">
+        <div class="container">
+          <div class="toolbar">
+            <div>
+              <p class="eyebrow">SCREEN MAP</p>
+              <h2>One developer journey across the product.</h2>
+            </div>
+            <span class="meta">docs · hosted · embedded · debug</span>
+          </div>
+          <div class="grid grid-3">
+            <a class="card" href="landing.html"><h3>官网首页</h3><p>定位、多链支持、快速接入代码、demo 入口。</p></a>
+            <a class="card" href="docs-getting-started.html"><h3>快速开始</h3><p>安装包、配置 adapters、DolphinProvider、/auth/* 接口。</p></a>
+            <a class="card" href="docs-api-reference.html"><h3>API 文档</h3><p>core/react/ui/server/adapter 的类型和方法索引。</p></a>
+            <a class="card" href="dashboard-projects.html"><h3>项目列表</h3><p>Hosted Dashboard 的项目、环境、状态、用量入口。</p></a>
+            <a class="card" href="dashboard-overview.html"><h3>项目概览</h3><p>登录、验证、session、错误趋势的产品级空状态。</p></a>
+            <a class="card" href="dashboard-setup.html"><h3>集成向导</h3><p>按框架和链生成安装命令、React 与服务端配置。</p></a>
+            <a class="card" href="dashboard-chains.html"><h3>支持链配置</h3><p>EVM、Sui、Solana、Bitcoin、Aptos 的启用与网络能力。</p></a>
+            <a class="card" href="embedded-login.html"><h3>嵌入式登录 UI</h3><p>ConnectButton、钱包弹窗、签名进度、账户菜单和错误态。</p></a>
+            <a class="card" href="playground.html"><h3>Playground</h3><p>选择链、钱包、auth 模式、token storage 并实时预览。</p></a>
+            <a class="card" href="debug.html"><h3>Debug Panel</h3><p>SDK state、wallets、events、session、SIWX 消息预览。</p></a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container">Dolphin ID · developer journey from docs to verified session.</div>
+    </footer>
+  </div>
+</body>
+</html>

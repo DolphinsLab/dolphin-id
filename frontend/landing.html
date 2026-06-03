@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dolphin ID · Multi-chain Web3 Login</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="nav"><div class="container nav-inner"><a class="brand" href="index.html">Dolphin ID</a><nav class="nav-links"><a href="docs-getting-started.html">Docs</a><a href="dashboard-projects.html">Dashboard</a><a href="embedded-login.html">Login UI</a><a href="playground.html">Demo</a></nav></div></header>
+  <main>
+    <section class="hero" data-od-id="landing-hero">
+      <div class="container hero-grid">
+        <div>
+          <p class="eyebrow">AUTH FOR MULTI-CHAIN APPS</p>
+          <h1>One login layer for EVM, Sui, Solana, Bitcoin, Aptos.</h1>
+          <p class="lead" style="margin-top: 24px;">Dolphin ID gives dApps a self-hosted SDK and an optional hosted nonce/session service, so teams can verify wallets without rebuilding auth plumbing for every chain.</p>
+          <div class="hero-actions"><a class="btn btn-primary" href="docs-getting-started.html">READ DOCS</a><a class="btn btn-ghost" href="playground.html">OPEN DEMO</a></div>
+        </div>
+        <div class="panel terminal">
+          <div class="terminal-head"><span class="meta">quick install</span><button class="btn btn-text" data-copy="#install-code" data-label="COPY">COPY</button></div>
+          <div class="terminal-body" id="install-code">
+            <div class="line"><span class="prompt">$</span><span>pnpm add @dolphin-id/react @dolphin-id/ui</span></div>
+            <div class="line"><span class="prompt">$</span><span>pnpm add @dolphin-id/server @dolphin-id/hosted</span></div>
+            <div class="line"><span class="prompt">→</span><span>Configure adapters, mount DolphinProvider, expose /auth/*.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="section" data-od-id="landing-features">
+      <div class="container">
+        <div class="toolbar"><div><p class="eyebrow">SURFACES</p><h2>Everything a developer needs to trust the path.</h2></div></div>
+        <div class="grid grid-3">
+          <div class="card"><h3>Self-hosted or hosted</h3><p>Use the server package inside your own backend, or let Hosted Dashboard issue nonces and manage sessions.</p></div>
+          <div class="card"><h3>Adapter-first chains</h3><p>Wallet discovery, connection, signing, events and account selection stay behind a ChainAdapter contract.</p></div>
+          <div class="card"><h3>Inspectable auth</h3><p>Playground and debug tools expose SIWX messages, session state, wallet events and common error paths.</p></div>
+        </div>
+      </div>
+    </section>
+    <section class="section" data-od-id="landing-flow">
+      <div class="container grid grid-2">
+        <div><p class="eyebrow">DEVELOPER FLOW</p><h2>From docs to a verified session.</h2><p class="lead" style="margin-top: 20px;">The product should make the happy path obvious while keeping every security-sensitive step visible.</p></div>
+        <div class="flow">
+          <div class="flow-step"><span class="step-index">01</span><p>Install packages and choose EVM, Sui, Solana, Bitcoin or Aptos adapters.</p></div>
+          <div class="flow-step"><span class="step-index">02</span><p>Configure allowed domains and auth mode before issuing a nonce.</p></div>
+          <div class="flow-step"><span class="step-index">03</span><p>Sign the SIWX message, verify it, create a session and recover it on refresh.</p></div>
+        </div>
+      </div>
+    </section>
+    <section class="section" data-od-id="landing-cta" style="text-align: center;"><div class="container" style="max-width: 680px;"><h2>Start with a mock wallet, finish with production auth.</h2><p class="lead" style="margin: 16px auto 32px;">Use the demo path first, then move the same settings into a Hosted project.</p><a class="btn btn-primary" href="playground.html">TRY PLAYGROUND</a></div></section>
+  </main>
+  <footer class="footer"><div class="container">Dolphin ID · multi-chain Web3 login</div></footer>
+  <script src="app.js"></script>
+</body>
+</html>

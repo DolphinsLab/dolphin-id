@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Dolphin ID · API Reference</title><link rel="stylesheet" href="styles.css" /></head>
+<body>
+  <header class="nav"><div class="container nav-inner"><a class="brand" href="index.html">Dolphin ID Docs</a><nav class="nav-links"><a href="docs-getting-started.html">Quick start</a><a href="dashboard-projects.html">Dashboard</a><a href="debug.html">Debug</a></nav></div></header>
+  <main class="shell">
+    <aside class="sidebar"><p class="eyebrow">REFERENCE</p><h3>Packages</h3><nav class="side-links"><a class="active" href="docs-api-reference.html">core</a><a href="docs-api-reference.html">react/ui</a><a href="docs-api-reference.html">server</a><a href="docs-api-reference.html">adapter</a></nav></aside>
+    <section class="main-pane" data-od-id="api-reference">
+      <p class="eyebrow">API REFERENCE</p><h1 style="font-size: clamp(44px, 7vw, 96px);">Typed surfaces for wallet auth.</h1>
+      <div class="panel" style="margin-top: 32px;"><table class="table">
+        <thead><tr><th>Package</th><th>Primary objects</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr id="core"><td class="num">@dolphin-id/core</td><td>Identity, Session, ChainAdapter</td><td>Shared types and auth state contracts.</td></tr>
+          <tr id="react"><td class="num">@dolphin-id/react</td><td>DolphinProvider, useDolphin, useSession</td><td>React integration and session recovery.</td></tr>
+          <tr><td class="num">@dolphin-id/ui</td><td>ConnectButton, WalletModal, AccountDisplay</td><td>Embeddable dApp-facing login UI.</td></tr>
+          <tr id="server"><td class="num">@dolphin-id/server</td><td>issueNonce, verifySignature, createSession</td><td>Self-hosted nonce and session endpoints.</td></tr>
+          <tr id="adapter"><td class="num">@dolphin-id/hosted</td><td>HostedClient, ProjectConfig</td><td>Hosted nonce/session service client.</td></tr>
+        </tbody>
+      </table></div>
+      <section class="section" data-od-id="adapter-spec">
+        <div class="grid grid-2">
+          <div><p class="eyebrow">ADAPTER SPEC</p><h2>Third-party chains implement one contract.</h2></div>
+          <div class="flow"><div class="flow-step"><span class="step-index">A</span><p>Discover installed wallets and expose installation state.</p></div><div class="flow-step"><span class="step-index">B</span><p>Connect, select accounts, sign messages and emit wallet events.</p></div><div class="flow-step"><span class="step-index">C</span><p>Normalize chainId, address, signature and domain fields for verification.</p></div></div>
+        </div>
+      </section>
+    </section>
+  </main>
+</body>
+</html>

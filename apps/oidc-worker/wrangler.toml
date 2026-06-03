@@ -2,6 +2,14 @@ name = "dolphin-id-oidc"
 main = "src/index.ts"
 compatibility_date = "2026-06-03"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+preview_urls = true
+
+[vars]
+DOLPHIN_ISSUER = "https://dolphin-id-oidc.hgamiui9.workers.dev"
+DOLPHIN_ALLOWED_ORIGINS = "https://dolphin-id-docs.pages.dev,http://localhost:3000"
+DOLPHIN_RUNTIME_ENVIRONMENT = "production"
+DOLPHIN_OIDC_KEY_ID = "dolphin-id-2026-06"
 
 [[durable_objects.bindings]]
 name = "AUTH_STORAGE"

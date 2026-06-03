@@ -60,6 +60,37 @@ describe("OIDC Worker", () => {
     await expect(response.json()).resolves.toEqual({ ok: true });
   });
 
+  it("serves dashboard status for the frontend without exposing secrets", async () => {
+    const response = await handleRequest(
+      new Request("https://id.example.com/dashboard/api/status", {
+        headers: { origin: "https://app.example.com" }
+      }),
+      fakeEnv({ DOLPHIN_ALLOWED_ORIGINS: "https://app.example.com" })
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://app.example.com");
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      issuer: "https://id.example.com",
+      configured: {
+        jwtSecret: true,
+        oidcSigningKey: true,
+        adminToken: true,
+        allowedOrigins: 1
+      },
+      cors: {
+        requestOrigin: "https://app.example.com",
+        requestOriginAllowed: true,
+        allowedOrigins: ["https://app.example.com"]
+      },
+      endpoints: {
+        nonce: "https://id.example.com/auth/nonce",
+        oidcClients: "https://id.example.com/admin/api/clients"
+      }
+    });
+  });
+
   it("serves OIDC discovery and JWKS with configured clients", async () => {
     const env = fakeEnv({
       DOLPHIN_ALLOWED_ORIGINS: "https://app.example.com"

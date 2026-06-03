@@ -1,5 +1,6 @@
 node_modules/
 dist/
+out/
 coverage/
 test-results/
 **/test-results/
@@ -14,4 +15,5 @@ target/
 .env
 .env.*
 !.env.example
+.DS_Store
 pnpm-debug.log*

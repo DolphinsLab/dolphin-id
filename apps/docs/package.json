@@ -7,13 +7,15 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "deploy:cloudflare": "NEXT_PUBLIC_DOLPHIN_API_BASE=https://dolphin-id-oidc.hgamiui9.workers.dev pnpm build && pnpm dlx wrangler pages deploy out --project-name dolphin-id-docs",
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/content.test.mjs"
   },
   "dependencies": {
     "next": "^16.0.7",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "viem": "^2.51.3"
   },
   "devDependencies": {
     "@types/react-dom": "^19.2.3"

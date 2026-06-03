@@ -27,6 +27,7 @@ export function DocsSearch({ pages }: { readonly pages: readonly DocsPage[] }) {
     <div className="search">
       <label htmlFor="docs-search">Search docs</label>
       <input
+        className="input"
         id="docs-search"
         onChange={(event) => setQuery(event.target.value)}
         placeholder="Search adapters, sessions, hosted auth..."
@@ -35,7 +36,7 @@ export function DocsSearch({ pages }: { readonly pages: readonly DocsPage[] }) {
       />
       <div className="searchResults">
         {results.map((page) => (
-          <Link href={`/docs/${page.slug}`} key={page.slug}>
+          <Link className="card search-card" href={`/docs/${page.slug}`} key={page.slug}>
             <strong>{page.title}</strong>
             <span>{page.section}</span>
           </Link>
