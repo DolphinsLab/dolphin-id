@@ -14,6 +14,8 @@ Self-hosted OpenID Connect issuer for Dolphin ID on Cloudflare Workers.
 - `GET /oauth2/authorize`
 - `POST /oauth2/token`
 - `GET /oauth2/userinfo`
+- `GET /register`
+- `POST /register/api/clients`
 - `GET /admin`
 - `GET /admin/api/clients`
 - `POST /admin/api/clients`
@@ -42,21 +44,25 @@ wrangler secret put DOLPHIN_OIDC_ADMIN_TOKEN --cwd apps/oidc-worker
 openssl genrsa 2048
 ```
 
-`DOLPHIN_OIDC_ADMIN_TOKEN` protects the built-in client registration page at
-`/admin`. Use a long random value. The admin page stores registered OIDC clients
-in the Worker Durable Object, so normal client registration does not require
-editing secrets or redeploying.
+`DOLPHIN_OIDC_ADMIN_TOKEN` protects the built-in admin page at `/admin`. Use a
+long random value. Registered OIDC clients are stored in the Worker Durable
+Object, so normal registration does not require editing secrets or redeploying.
 
 ## Register OIDC Clients
 
-Open `/admin`, enter `DOLPHIN_OIDC_ADMIN_TOKEN`, and register the relying party:
+Public relying parties can open `/register` and self-register:
 
-- `clientId`
 - one or more `redirectUris`
-- optional `clientSecret` (leave blank to generate one)
 - allowed scopes, usually `openid`, `profile`, and `wallet`
 
-Generated client secrets are shown only once after registration.
+The public registration endpoint generates the `clientId` and `clientSecret`.
+Generated client secrets are shown only once after registration. Public
+registration validates redirect URIs, limits each request to five redirect URIs,
+and rate-limits registrations per IP.
+
+Admins can open `/admin`, enter `DOLPHIN_OIDC_ADMIN_TOKEN`, then list, create,
+or delete clients. Admin-created clients may use a custom `clientId` and
+`clientSecret`.
 
 Optional bootstrap clients can still be supplied with `DOLPHIN_OIDC_CLIENTS`.
 This is useful for immutable deployments or emergency recovery, but it is not

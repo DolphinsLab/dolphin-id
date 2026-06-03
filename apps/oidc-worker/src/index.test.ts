@@ -13,7 +13,17 @@ describe("OIDC Worker", () => {
     expect(response.headers.get("content-type")).toContain("text/html");
     expect(html).toContain("Dolphin ID OIDC");
     expect(html).toContain("https://id.example.com/.well-known/openid-configuration");
+    expect(html).toContain("https://id.example.com/register");
     expect(html).toContain("https://id.example.com/admin");
+  });
+
+  it("serves a public OIDC client registration page", async () => {
+    const response = await handleRequest(new Request("https://id.example.com/register"), fakeEnv());
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(html).toContain("Register OIDC Client");
+    expect(html).toContain("/register/api/clients");
   });
 
   it("serves an admin page for OIDC client registration", async () => {
@@ -125,6 +135,70 @@ describe("OIDC Worker", () => {
           source: "managed"
         }
       ]
+    });
+  });
+
+  it("publicly registers OIDC clients without an admin token", async () => {
+    const env = fakeEnv({ DOLPHIN_OIDC_CLIENTS: "[]" }) as Env & {
+      DOLPHIN_OIDC_ADMIN_TOKEN?: string;
+    };
+    delete env.DOLPHIN_OIDC_ADMIN_TOKEN;
+    const create = await handleRequest(
+      new Request("https://id.example.com/register/api/clients", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "cf-connecting-ip": "203.0.113.10"
+        },
+        body: JSON.stringify({
+          redirectUris: ["https://public.example.com/callback"],
+          allowedScopes: ["openid", "profile"]
+        })
+      }),
+      env
+    );
+    const created = (await create.json()) as {
+      readonly client: {
+        readonly clientId: string;
+        readonly redirectUris: readonly string[];
+        readonly source: string;
+      };
+      readonly clientSecret: string;
+    };
+
+    expect(create.status).toBe(201);
+    expect(created.client.clientId).toMatch(/^dc_/);
+    expect(created.client.redirectUris).toEqual(["https://public.example.com/callback"]);
+    expect(created.client.source).toBe("managed");
+    expect(created.clientSecret).toHaveLength(43);
+
+    const authorize = await handleRequest(
+      new Request(
+        `https://id.example.com/oauth2/authorize?response_type=code&client_id=${created.client.clientId}&redirect_uri=https%3A%2F%2Fpublic.example.com%2Fcallback&scope=openid%20profile`
+      ),
+      env
+    );
+
+    expect(authorize.status).toBe(400);
+    await expect(authorize.json()).resolves.not.toEqual({ error: "OIDC client not found." });
+  });
+
+  it("rejects public client registration with unsafe redirect URIs", async () => {
+    const response = await handleRequest(
+      new Request("https://id.example.com/register/api/clients", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          redirectUris: ["http://evil.example.com/callback"],
+          allowedScopes: ["openid"]
+        })
+      }),
+      fakeEnv()
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "redirectUris must use HTTPS outside localhost."
     });
   });
 

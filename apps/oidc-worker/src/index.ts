@@ -61,6 +61,7 @@ export interface Env {
   readonly DOLPHIN_OIDC_CLIENTS?: string;
   readonly DOLPHIN_OIDC_ADMIN_TOKEN?: string;
   readonly DOLPHIN_ALLOWED_ORIGINS?: string;
+  readonly DOLPHIN_PUBLIC_REGISTRATION_LIMIT?: string;
   readonly DOLPHIN_SESSION_COOKIE?: string;
   readonly DOLPHIN_REFRESH_COOKIE?: string;
   readonly DOLPHIN_RUNTIME_ENVIRONMENT?: RuntimeEnvironment;
@@ -86,7 +87,8 @@ type StorageOperation =
   | { readonly type: "oidcClient.get"; readonly clientId: string }
   | { readonly type: "oidcClient.list" }
   | { readonly type: "oidcClient.upsert"; readonly client: OidcClient }
-  | { readonly type: "oidcClient.delete"; readonly clientId: string };
+  | { readonly type: "oidcClient.delete"; readonly clientId: string }
+  | { readonly type: "registration.consume"; readonly key: string; readonly limit: number };
 
 type SerializedNonceRecord = Omit<NonceRecord, "issuedAt" | "expiresAt"> & {
   readonly issuedAt: string;
@@ -147,21 +149,29 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       return landingPage(url.origin, corsHeaders);
     }
 
+    if (request.method === "GET" && url.pathname === "/register") {
+      return registrationPage(url.origin, corsHeaders);
+    }
+
+    if (request.method === "POST" && url.pathname === "/register/api/clients") {
+      return await handlePublicRegisterClient(request, env, corsHeaders);
+    }
+
     if (request.method === "GET" && url.pathname === "/admin") {
       return adminPage(url.origin, Boolean(env.DOLPHIN_OIDC_ADMIN_TOKEN), corsHeaders);
     }
 
     if (url.pathname === "/admin/api/clients" && request.method === "GET") {
-      return handleAdminListClients(request, env, corsHeaders);
+      return await handleAdminListClients(request, env, corsHeaders);
     }
 
     if (url.pathname === "/admin/api/clients" && request.method === "POST") {
-      return handleAdminUpsertClient(request, env, corsHeaders);
+      return await handleAdminUpsertClient(request, env, corsHeaders);
     }
 
     if (url.pathname.startsWith("/admin/api/clients/") && request.method === "DELETE") {
       const clientId = decodeURIComponent(url.pathname.slice("/admin/api/clients/".length));
-      return handleAdminDeleteClient(request, env, clientId, corsHeaders);
+      return await handleAdminDeleteClient(request, env, clientId, corsHeaders);
     }
 
     if (url.pathname === "/health") {
@@ -295,6 +305,8 @@ export class DolphinOidcStorage {
       case "oidcClient.delete":
         await this.deleteOidcClient(operation.clientId);
         return { ok: true };
+      case "registration.consume":
+        return this.consumeRegistrationQuota(operation.key, operation.limit);
     }
   }
 
@@ -421,6 +433,20 @@ export class DolphinOidcStorage {
     );
     clientIds.delete(clientId);
     await this.state.storage.put(OIDC_CLIENT_INDEX_KEY, [...clientIds].sort());
+  }
+
+  private async consumeRegistrationQuota(
+    key: string,
+    limit: number
+  ): Promise<{ readonly ok: boolean; readonly remaining: number }> {
+    const current = (await this.state.storage.get<number>(registrationQuotaKey(key))) ?? 0;
+
+    if (current >= limit) {
+      return { ok: false, remaining: 0 };
+    }
+
+    await this.state.storage.put(registrationQuotaKey(key), current + 1);
+    return { ok: true, remaining: Math.max(0, limit - current - 1) };
   }
 }
 
@@ -638,6 +664,40 @@ function storageClient(env: Env): StorageClient {
   return new StorageClient(env.AUTH_STORAGE.get(id));
 }
 
+async function handlePublicRegisterClient(
+  request: Request,
+  env: Env,
+  corsHeaders: HeadersInit
+): Promise<Response> {
+  const body = await readJsonObject(request);
+  const client = normalizePublicClientInput(body);
+  const quota = await consumePublicRegistrationQuota(request, env);
+
+  if (!quota.ok) {
+    return json(
+      { error: "Registration limit reached. Try again tomorrow or contact the issuer admin." },
+      { status: 429, headers: corsHeaders }
+    );
+  }
+
+  const clientSecret = createClientSecret();
+  const storedClient = {
+    ...client,
+    clientId: createClientId(),
+    clientSecret
+  };
+
+  await workerOidcClientStore(env).upsertClient(storedClient);
+
+  return json(
+    {
+      client: adminClientView(storedClient, "managed"),
+      clientSecret
+    },
+    { status: 201, headers: corsHeaders }
+  );
+}
+
 async function handleAdminListClients(
   request: Request,
   env: Env,
@@ -706,6 +766,25 @@ function workerOidcClientStore(env: Env): WorkerOidcClientStore {
     storageClient(env),
     parseOidcClients(env.DOLPHIN_OIDC_CLIENTS ?? "[]")
   );
+}
+
+async function consumePublicRegistrationQuota(
+  request: Request,
+  env: Env
+): Promise<{ readonly ok: boolean; readonly remaining: number }> {
+  const limit = Math.max(1, Number.parseInt(env.DOLPHIN_PUBLIC_REGISTRATION_LIMIT ?? "10", 10));
+  const ip =
+    request.headers.get("cf-connecting-ip") ??
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    "unknown";
+  const day = new Date().toISOString().slice(0, 10);
+  const result = await storageClient(env).send({
+    type: "registration.consume",
+    key: `${day}:${ip}`,
+    limit
+  });
+
+  return result as { readonly ok: boolean; readonly remaining: number };
 }
 
 function authorizeAdminRequest(
@@ -825,6 +904,40 @@ function normalizeAdminClientInput(body: Readonly<Record<string, unknown>>): Oid
   };
 }
 
+function normalizePublicClientInput(
+  body: Readonly<Record<string, unknown>>
+): Omit<OidcClient, "clientId"> {
+  const redirectUris = readStringList(body.redirectUris, "redirectUris");
+  if (redirectUris.length === 0) {
+    throw new Error("At least one redirect URI is required.");
+  }
+  if (redirectUris.length > 5) {
+    throw new Error("At most five redirect URIs are allowed.");
+  }
+
+  redirectUris.forEach(assertOidcRedirectUrl);
+
+  const allowedScopes =
+    body.allowedScopes === undefined
+      ? [...DEFAULT_OIDC_SCOPES]
+      : readStringList(body.allowedScopes, "allowedScopes");
+  const supportedScopes = new Set(DEFAULT_OIDC_SCOPES);
+  allowedScopes.forEach((scope) => {
+    if (!supportedScopes.has(scope as (typeof DEFAULT_OIDC_SCOPES)[number])) {
+      throw new Error(`Unsupported scope ${scope}.`);
+    }
+  });
+
+  if (!allowedScopes.includes("openid")) {
+    throw new Error("allowedScopes must include openid.");
+  }
+
+  return {
+    redirectUris,
+    allowedScopes
+  };
+}
+
 function readRequiredString(value: unknown, name: string): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new Error(`${name} is required.`);
@@ -852,6 +965,25 @@ function assertHttpsUrl(value: string, name: string): void {
   if (url.protocol !== "https:" && url.hostname !== "localhost" && url.hostname !== "127.0.0.1") {
     throw new Error(`${name} must use HTTPS outside localhost.`);
   }
+}
+
+function assertOidcRedirectUrl(value: string): void {
+  assertHttpsUrl(value, "redirectUris");
+  const url = new URL(value);
+
+  if (url.username || url.password) {
+    throw new Error("redirectUris must not contain credentials.");
+  }
+
+  if (url.hash) {
+    throw new Error("redirectUris must not contain fragments.");
+  }
+}
+
+function createClientId(): string {
+  const bytes = new Uint8Array(18);
+  crypto.getRandomValues(bytes);
+  return `dc_${base64UrlEncode(bytes)}`;
 }
 
 function createClientSecret(): string {
@@ -917,6 +1049,7 @@ function landingPage(origin: string, corsHeaders: HeadersInit = {}): Response {
   const discoveryUrl = `${origin}/.well-known/openid-configuration`;
   const jwksUrl = `${origin}/.well-known/jwks.json`;
   const healthUrl = `${origin}/health`;
+  const registerUrl = `${origin}/register`;
   const adminUrl = `${origin}/admin`;
 
   return new Response(
@@ -1001,11 +1134,199 @@ function landingPage(origin: string, corsHeaders: HeadersInit = {}): Response {
           <dd><a href="${escapeHtml(healthUrl)}">${escapeHtml(healthUrl)}</a></dd>
         </div>
         <div>
+          <dt>Register client</dt>
+          <dd><a href="${escapeHtml(registerUrl)}">${escapeHtml(registerUrl)}</a></dd>
+        </div>
+        <div>
           <dt>Client admin</dt>
           <dd><a href="${escapeHtml(adminUrl)}">${escapeHtml(adminUrl)}</a></dd>
         </div>
       </dl>
     </main>
+  </body>
+</html>`,
+    {
+      status: 200,
+      headers: { ...HTML_HEADERS, ...corsHeaders }
+    }
+  );
+}
+
+function registrationPage(origin: string, corsHeaders: HeadersInit = {}): Response {
+  return new Response(
+    `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Register Dolphin ID OIDC Client</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f7f7f4;
+        color: #171717;
+      }
+      main {
+        width: min(820px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 44px 0;
+      }
+      header {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 30px;
+      }
+      p {
+        margin: 0;
+        color: #525252;
+        line-height: 1.55;
+      }
+      section {
+        border-top: 1px solid #deded8;
+        padding: 22px 0;
+      }
+      label {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 14px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #404040;
+      }
+      textarea {
+        width: 100%;
+        min-height: 92px;
+        border: 1px solid #c8c8c0;
+        border-radius: 6px;
+        padding: 10px 12px;
+        font: 14px ui-sans-serif, system-ui, sans-serif;
+        resize: vertical;
+        background: #fff;
+        color: #171717;
+      }
+      button {
+        border: 1px solid #0f766e;
+        border-radius: 6px;
+        padding: 10px 14px;
+        background: #0f766e;
+        color: #fff;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      code,
+      pre {
+        font: 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+      pre {
+        overflow: auto;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        border: 1px solid #deded8;
+        border-radius: 6px;
+        background: #fff;
+        padding: 14px;
+      }
+      .notice {
+        margin-top: 16px;
+        padding: 12px;
+        border: 1px solid #deded8;
+        border-radius: 6px;
+        background: #fff;
+        overflow-wrap: anywhere;
+      }
+      .hidden {
+        display: none;
+      }
+      @media (max-width: 640px) {
+        header {
+          display: block;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Register OIDC Client</h1>
+          <p>Issuer: <code>${escapeHtml(origin)}</code></p>
+        </div>
+        <a href="/">Issuer home</a>
+      </header>
+
+      <section>
+        <label>
+          Redirect URIs
+          <textarea id="redirectUris" placeholder="https://app.example.com/auth/callback"></textarea>
+        </label>
+        <label>
+          Allowed scopes
+          <textarea id="allowedScopes">openid
+profile
+wallet</textarea>
+        </label>
+        <button id="register" type="button">Register client</button>
+        <div id="message" class="notice hidden"></div>
+      </section>
+
+      <section>
+        <p>Save the generated <code>client_secret</code> immediately. It is shown only once.</p>
+        <pre id="result" class="hidden"></pre>
+      </section>
+    </main>
+    <script>
+      const message = document.querySelector("#message");
+      const result = document.querySelector("#result");
+
+      function lines(value) {
+        return value.split(/\\n|,/).map((item) => item.trim()).filter(Boolean);
+      }
+
+      function show(text, isError = false) {
+        message.classList.remove("hidden");
+        message.style.borderColor = isError ? "#f0a8a0" : "#99d4c9";
+        message.textContent = text;
+      }
+
+      document.querySelector("#register").addEventListener("click", async () => {
+        result.classList.add("hidden");
+        result.textContent = "";
+        try {
+          const response = await fetch("/register/api/clients", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              redirectUris: lines(document.querySelector("#redirectUris").value),
+              allowedScopes: lines(document.querySelector("#allowedScopes").value)
+            })
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Registration failed.");
+          const payload = {
+            issuer: "${escapeHtml(origin)}",
+            client_id: data.client.clientId,
+            client_secret: data.clientSecret,
+            redirect_uris: data.client.redirectUris,
+            scopes: data.client.allowedScopes.join(" ")
+          };
+          result.classList.remove("hidden");
+          result.textContent = JSON.stringify(payload, null, 2);
+          show("Client registered.");
+        } catch (error) {
+          show(error.message, true);
+        }
+      });
+    </script>
   </body>
 </html>`,
     {
@@ -1623,4 +1944,8 @@ function oidcCodeKey(code: string): string {
 
 function oidcClientKey(clientId: string): string {
   return `oidc-client:${clientId}`;
+}
+
+function registrationQuotaKey(key: string): string {
+  return `registration-quota:${key}`;
 }
