@@ -28,6 +28,10 @@ Self-hosted OpenID Connect issuer for Dolphin ID on Cloudflare Workers.
 The auth endpoints establish a Dolphin wallet session. The OIDC endpoints expose
 that session through the standard authorization-code flow.
 
+`GET /dashboard/api/status` is consumed by the docs console and returns the
+issuer, runtime, secret-readiness flags, CORS status, and canonical endpoint
+URLs for operators.
+
 ## Required Secrets
 
 Set these in Cloudflare before serving traffic:
@@ -108,6 +112,31 @@ wrangler secret put DOLPHIN_ALLOWED_ORIGINS --cwd apps/oidc-worker
 ```
 
 Use a comma-separated list such as `https://app.example.com,https://admin.example.com`.
+
+Other supported variables:
+
+- `DOLPHIN_OIDC_KEY_ID`: optional JWKS `kid`; defaults to a key thumbprint.
+- `DOLPHIN_PUBLIC_REGISTRATION_LIMIT`: per-identity public registration quota,
+  default `10`.
+- `DOLPHIN_SESSION_COOKIE`: session cookie name, default `dolphin_session`.
+- `DOLPHIN_REFRESH_COOKIE`: refresh cookie name, default `dolphin_refresh`.
+- `DOLPHIN_RUNTIME_ENVIRONMENT`: defaults to `production`.
+- `DOLPHIN_ALLOW_INSECURE_HTTP=true`: local/emergency override for HTTP origins
+  and non-secure cookies.
+
+## Connect The Docs Console
+
+`apps/docs` exposes the private console at `/dashboard/overview`,
+`/dashboard/projects`, `/dashboard/setup`, and `/dashboard/chains`. Set the
+default Worker base while building or deploying the docs site:
+
+```bash
+NEXT_PUBLIC_DOLPHIN_API_BASE=https://id.example.com pnpm --filter @dolphin-id/docs build
+```
+
+Operators can also paste the Worker base URL and `DOLPHIN_OIDC_ADMIN_TOKEN` into
+the console sign-in screen. The console calls `/dashboard/api/status` and
+`/admin/api/clients` on this Worker.
 
 ## Deploy
 

@@ -11,10 +11,16 @@ authors. New here? Start with the [README](../README.md).
 ## Build with it
 
 - [Getting started](getting-started.md) — wire Dolphin ID into a React app with self-hosted auth.
+- [Integration manual](integration-manual.md) — handoff guide for React apps, self-hosted auth, OIDC Worker, and the docs console.
 - [API reference](api-reference.md) — provider, hooks, components, and server SDK.
 - [CLI scaffolder](cli.md) — generate a runnable Next.js integration.
 - [Server SDKs](server-sdks.md) — Go, Rust, and Python verification helpers.
 - [Troubleshooting](troubleshooting.md) — common integration issues.
+
+## Operate it
+
+- [`apps/oidc-worker`](../apps/oidc-worker) — Cloudflare Worker issuer for auth routes, OIDC discovery/JWKS, registration, and admin APIs.
+- [`apps/docs`](../apps/docs) — docs site plus console routes for Worker status, OIDC clients, integration setup, and chain policy.
 
 ## Extend & secure it
 

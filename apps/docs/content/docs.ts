@@ -76,6 +76,29 @@ export const docsPages: readonly DocsPage[] = [
     ]
   },
   {
+    slug: "integration-manual",
+    title: "Integration Manual",
+    section: "Deployment handoff",
+    description:
+      "React, self-hosted auth, OIDC Worker, docs console, and relying-party handoff guidance.",
+    version: docsVersion,
+    summary: [
+      "The integration path starts with React provider setup, then chooses self-hosted routes or the shared Cloudflare Worker issuer.",
+      "The Worker exposes Dolphin auth routes, OIDC discovery/JWKS/token/userinfo endpoints, public registration, admin APIs, and a dashboard status endpoint consumed by the docs console."
+    ],
+    bullets: [
+      "React apps configure adapters, DolphinProvider auth endpoints, and either default UI or headless hooks.",
+      "Self-hosted backends expose /auth/nonce, /auth/verify, /auth/refresh, /auth/me, and /auth/logout.",
+      "OIDC deployments configure DOLPHIN_JWT_SECRET, DOLPHIN_ISSUER, DOLPHIN_OIDC_SIGNING_KEY, DOLPHIN_OIDC_ADMIN_TOKEN, and allowed origins.",
+      "Relying parties register redirect URIs and use the authorization-code flow with optional PKCE.",
+      "The docs console manages OIDC clients through the Worker admin API after an operator enters the Worker base and admin token."
+    ],
+    links: [
+      { label: "Integration manual", href: "/docs/integration-manual" },
+      { label: "OIDC Worker", href: "/docs/oidc-worker" }
+    ]
+  },
+  {
     slug: "hosted-service",
     title: "Hosted Service",
     section: "Hosted value-add",
@@ -93,6 +116,29 @@ export const docsPages: readonly DocsPage[] = [
     ],
     links: [
       { label: "CLI hosted recipe", href: "/docs/examples" },
+      { label: "Security", href: "/docs/security" }
+    ]
+  },
+  {
+    slug: "oidc-worker",
+    title: "OIDC Worker",
+    section: "Hosted value-add",
+    description:
+      "Cloudflare Worker issuer for Dolphin auth routes, OIDC clients, JWKS, and console operations.",
+    version: docsVersion,
+    summary: [
+      "The OIDC Worker wraps @dolphin-id/server with Durable Object stores and exposes wallet-backed sessions through standard OIDC endpoints.",
+      "It supports public client registration for signed-in developers, admin client management, a reserved first-party console client, and dashboard status checks."
+    ],
+    bullets: [
+      "Deploy apps/oidc-worker with the AUTH_STORAGE Durable Object binding and nodejs_compat enabled.",
+      "Set DOLPHIN_JWT_SECRET, DOLPHIN_ISSUER, DOLPHIN_OIDC_SIGNING_KEY, DOLPHIN_OIDC_ADMIN_TOKEN, and DOLPHIN_ALLOWED_ORIGINS before production traffic.",
+      "Use /.well-known/openid-configuration, /.well-known/jwks.json, /oauth2/authorize, /oauth2/token, and /oauth2/userinfo for relying parties.",
+      "Use /admin/api/clients with Bearer admin token auth to list, create, or delete managed OIDC clients.",
+      "Use /dashboard/api/status from the docs console to inspect issuer, CORS, endpoints, and secret readiness."
+    ],
+    links: [
+      { label: "Integration manual", href: "/docs/integration-manual" },
       { label: "Security", href: "/docs/security" }
     ]
   },

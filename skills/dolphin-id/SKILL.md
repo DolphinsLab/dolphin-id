@@ -29,9 +29,19 @@ For an existing app, do it by hand:
 4. Provide `DOLPHIN_JWT_SECRET` (long/non-obvious in production) and the app's
    public origin via env. Verify with `pnpm test` / `pnpm dev`.
 
+If the user needs a shared wallet-backed identity provider or OIDC relying-party
+integration, use `apps/oidc-worker` instead of app-local routes. Deploy the
+Cloudflare Worker, set `DOLPHIN_JWT_SECRET`, `DOLPHIN_ISSUER`,
+`DOLPHIN_OIDC_SIGNING_KEY`, `DOLPHIN_OIDC_ADMIN_TOKEN`, and
+`DOLPHIN_ALLOWED_ORIGINS`, then register clients through `/register` or
+`/admin/api/clients`. Relying parties use discovery, JWKS, authorization-code
+exchange, and `did_identity` / `did_account` claims.
+
 Authoritative references: the root `README.md` Quick Start,
-`docs/getting-started.md` (route flow), `docs/cli.md` (scaffolder recipes), and
-`examples/next` (complete Next.js App Router handlers).
+`docs/getting-started.md` (route flow), `docs/integration-manual.md` (handoff
+guide), `docs/cli.md` (scaffolder recipes), `apps/oidc-worker/README.md`
+(Worker/OIDC deployment), and `examples/next` (complete Next.js App Router
+handlers).
 
 ## Repository Map
 
@@ -41,9 +51,11 @@ Authoritative references: the root `README.md` Quick Start,
 - `packages/ui`: optional default components layered on the React hooks.
 - `packages/server`: self-hosted nonce, verification, identity, refresh token, session, middleware, and route helpers.
 - `packages/cli` and `packages/hosted`: app scaffolding and optional hosted auth primitives.
+- `apps/oidc-worker`: Cloudflare Worker issuer for Dolphin auth routes, OIDC discovery/JWKS, public registration, admin client APIs, and Durable Object stores.
+- `apps/docs`: public docs site plus a console for Worker status, OIDC clients, integration setup, and chain policy.
 - `sdks/go`, `sdks/rust`, `sdks/python`: parity helpers backed by `sdks/fixtures/server-auth.json`.
 - `examples/basic`, `examples/next`, `examples/adapter-third-party`: integration and adapter contract examples.
-- `docs/` and `apps/docs`: public docs source and docs site.
+- `docs/`: public Markdown docs and release/security handoff material.
 
 ## Project Rules
 
@@ -78,6 +90,20 @@ Authoritative references: the root `README.md` Quick Start,
 2. For nonce, refresh token, identity, or session changes, test replay, expiry, invalid subject, forced logout, and reuse where relevant.
 3. When changing shared auth fixtures, regenerate or update `sdks/fixtures/server-auth.json` and run affected Go, Rust, and Python parity tests.
 4. Keep non-Node SDKs scoped to documented parity helpers unless the repository docs expand their surface.
+
+### OIDC Worker And Console Changes
+
+1. Treat `@dolphin-id/server` as the source of truth for OIDC behavior; keep
+   Worker code focused on request routing, Durable Object persistence, CORS,
+   public registration, and admin APIs.
+2. When changing Worker environment variables or endpoints, update
+   `apps/oidc-worker/README.md`, `docs/integration-manual.md`, the root
+   `README.md`, and docs-site content in `apps/docs/content/docs.ts`.
+3. Keep `apps/docs` console flows aligned with Worker APIs:
+   `/dashboard/api/status` for readiness and `/admin/api/clients` for OIDC
+   client management.
+4. Run `pnpm --filter @dolphin-id/oidc-worker test` and
+   `pnpm --filter @dolphin-id/docs test` for Worker/console doc changes.
 
 ### Docs, Examples, And CLI
 

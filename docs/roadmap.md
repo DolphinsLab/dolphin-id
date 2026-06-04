@@ -33,6 +33,8 @@ Production-ready open-source core with clear hosted-service boundaries.
 - CLI scaffolder for Next.js integrations (`dolphin-id create`).
 - Go, Rust, and Python server verification SDKs with fixture parity.
 - Optional hosted nonce/session primitives (`@dolphin-id/hosted`).
+- Cloudflare Worker OIDC issuer with discovery, JWKS, authorization-code flow,
+  client registration, admin APIs, and docs-console management screens.
 - Docs site, third-party adapter spec, and security-audit remediation.
 
 See the [v1.0.0 release notes](releases/v1.0.0.md) for the full release scope.
@@ -44,7 +46,6 @@ Direction, not commitments. Order and inclusion may change.
 - Additional ecosystem adapters: TON, Cosmos, NEAR.
 - EIP-1271 contract-wallet verification.
 - Hardware wallet support (Ledger / Trezor) through adapter capabilities.
-- Development-mode debug panel.
 - Integration packages for Auth.js, Clerk, and similar auth systems.
 
 Have a request? Open an issue describing the chain or capability and the use

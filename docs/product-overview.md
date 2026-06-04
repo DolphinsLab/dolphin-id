@@ -11,9 +11,9 @@ API usage start with the [README](../README.md), the
 Dolphin ID is multi-chain Web3 login infrastructure for the React ecosystem. It
 gives dApps a unified React API, chain adapters, an SIWX ("Sign-In With X")
 message abstraction, server verification SDKs, and optional hosted
-nonce/session primitives — so a team can support wallet connection,
-signature-based login, session management, and multi-wallet identity binding
-across EVM, Sui, Solana, Bitcoin, and Aptos.
+nonce/session primitives plus an OIDC bridge — so a team can support wallet
+connection, signature-based login, session management, multi-wallet identity
+binding, and relying-party auth across EVM, Sui, Solana, Bitcoin, and Aptos.
 
 It deliberately does **not** custody wallets, manage private keys, build
 transactions, or replace chain SDKs like wagmi, Sui dApp Kit, or Solana Wallet
@@ -41,6 +41,8 @@ chain differences inside adapters and presents one consistent login surface.
 - Provide chain-neutral SIWX construction and verification contracts.
 - Cover server verification in Node.js, Go, Rust, and Python.
 - Support both "address as user" and "one identity, many wallets" models.
+- Expose wallet-backed sessions through OIDC where existing app stacks expect
+  discovery, JWKS, authorization-code, token, and userinfo endpoints.
 - Keep the core small and load chain capabilities only when requested.
 - Preserve a complete self-hosted path with optional hosted value-add.
 
@@ -73,6 +75,7 @@ enterprise capabilities — they never block self-hosted adoption.
 | Session          | The authenticated session, backed by JWT with optional refresh/invalidation.           |
 | Adapter Registry | The set of enabled adapters used for wallet listing, connection routing, and lookups.  |
 | Hosted Auth      | Optional managed nonce/session infrastructure on the same open-source primitives.      |
+| OIDC Worker      | Cloudflare Worker issuer that exposes Dolphin sessions to OIDC relying parties.        |
 
 ## Architecture
 
@@ -88,8 +91,9 @@ Backend
   ├─ SIWX Verify Service
   ├─ Identity Repository
   ├─ Session Service
+  ├─ OIDC Provider / JWKS
   ├─ Middleware
-  └─ Optional Hosted Service
+  └─ Optional Hosted Service / Worker Console
 ```
 
 The [Workspace Map in the README](../README.md#workspace-map) lists every
@@ -111,6 +115,11 @@ identity, and issues a session.
 **Refresh & logout** — the SDK refreshes within the allowed window; user or
 server can log out; server-side invalidation versions make previously issued
 sessions fail validation.
+
+**OIDC relying party** — an operator registers a client in the Worker console or
+public registration page; the relying party reads discovery/JWKS metadata, runs
+authorization-code flow, verifies RS256 tokens, and consumes `did_identity` /
+`did_account` claims.
 
 **Multi-wallet binding** — after signing in, the user connects another wallet,
 the backend issues a binding-purpose nonce, the new wallet signs an ownership
@@ -142,5 +151,6 @@ See the [v1.0 security audit summary](security-audit.md) for the audited result.
 | Provide hosted nonce/session services?      | Yes — optional, never blocks self-hosting.    |
 | Sensitive-op authorization in multi-wallet? | Any bound wallet by default; apps override.   |
 | Passkey/WebAuthn as a non-wallet fallback?  | No — primary path stays wallet-signature.     |
+| OIDC bridge in hosted-style deployment?     | Yes — Cloudflare Worker issuer plus console.  |
 | Business model?                             | Open-source core plus value-added services.   |
 | Product name and package scope?             | `Dolphin ID`, packages under `@dolphin-id/*`. |

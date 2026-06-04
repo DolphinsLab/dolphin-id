@@ -3,16 +3,16 @@
 [![CI](https://github.com/DolphinsLab/dolphin-id/actions/workflows/ci.yml/badge.svg)](https://github.com/DolphinsLab/dolphin-id/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-Multi-chain Web3 login for React apps, self-hosted auth servers, and wallet
-adapter authors.
+Multi-chain Web3 login for React apps, self-hosted auth servers, OIDC relying
+parties, and wallet adapter authors.
 
 Dolphin ID is a TypeScript monorepo for SIWX-style authentication across EVM,
 Sui, Solana, Bitcoin, and Aptos. SIWX ("Sign-In With X") generalizes
 [EIP-4361 / Sign-In With Ethereum](https://eips.ethereum.org/EIPS/eip-4361) to
-every supported chain. It provides chain-neutral adapter contracts,
-React hooks, optional default UI, self-hosted server auth primitives, CLI app
-scaffolding, hosted-service primitives, runnable examples, and Go/Rust/Python
-verification helpers.
+every supported chain. It provides chain-neutral adapter contracts, React hooks,
+optional default UI, self-hosted server auth primitives, CLI app scaffolding,
+hosted-service primitives, a Cloudflare Worker OIDC issuer, a docs console for
+managing clients, runnable examples, and Go/Rust/Python verification helpers.
 
 Current scope: `v1.0.0`, released on 2026-06-01. Read the
 [v1.0.0 release notes](docs/releases/v1.0.0.md) for the full release scope.
@@ -28,6 +28,8 @@ Current scope: `v1.0.0`, released on 2026-06-01. Read the
 | Scaffold a Next.js integration    | [`dolphin-id create`](docs/cli.md)                                                                               |
 | Build a third-party chain adapter | [Adapter specification](docs/adapter-spec.md) and [`examples/adapter-third-party`](examples/adapter-third-party) |
 | Verify sessions outside Node.js   | [Go/Rust/Python server SDKs](docs/server-sdks.md)                                                                |
+| Expose wallet login through OIDC  | [Integration manual](docs/integration-manual.md) and [`apps/oidc-worker`](apps/oidc-worker)                      |
+| Manage deployed OIDC clients      | [`apps/docs`](apps/docs) console at `/dashboard/projects`                                                        |
 | Try the complete browser flow     | [`examples/next`](examples/next)                                                                                 |
 
 ## Supported Chains
@@ -199,22 +201,23 @@ pnpm --filter @dolphin-id/example-next test
 
 ## Workspace Map
 
-| Path                           | Package                                   | Purpose                                                                                 |
-| ------------------------------ | ----------------------------------------- | --------------------------------------------------------------------------------------- |
-| `packages/core`                | `@dolphin-id/core`                        | Chain-neutral contracts, SIWX types, events, errors, and shared state                   |
-| `packages/react`               | `@dolphin-id/react`                       | `DolphinProvider`, headless hooks, auth client integration, and session state           |
-| `packages/ui`                  | `@dolphin-id/ui`                          | Default UI components, themes, locales, and copy overrides                              |
-| `packages/server`              | `@dolphin-id/server`                      | Self-hosted nonce, verification, identity, JWT session, refresh, and middleware helpers |
-| `packages/cli`                 | `@dolphin-id/cli`                         | App scaffolder for Next.js integrations                                                 |
-| `packages/hosted`              | `@dolphin-id/hosted`                      | Hosted nonce/session service primitives and development stores                          |
-| `packages/adapter-*`           | `@dolphin-id/adapter-*`                   | Chain-specific wallet discovery, SIWX signing, and address normalization                |
-| `sdks/go`                      | Go SDK                                    | EVM/Sui verification and HS256 session claim helpers                                    |
-| `sdks/rust`                    | Rust SDK                                  | EVM/Sui verification and HS256 session claim helpers                                    |
-| `sdks/python`                  | Python SDK                                | EVM/Sui verification and HS256 session claim helpers                                    |
-| `apps/docs`                    | `@dolphin-id/docs`                        | Next.js documentation site                                                              |
-| `examples/next`                | `@dolphin-id/example-next`                | Full EVM/Sui login example with Playwright coverage                                     |
-| `examples/basic`               | `@dolphin-id/example-basic`               | Minimal adapter construction playground                                                 |
-| `examples/adapter-third-party` | `@dolphin-id/example-adapter-third-party` | Contract-tested sample external adapter                                                 |
+| Path                           | Package                                   | Purpose                                                                                            |
+| ------------------------------ | ----------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `packages/core`                | `@dolphin-id/core`                        | Chain-neutral contracts, SIWX types, events, errors, and shared state                              |
+| `packages/react`               | `@dolphin-id/react`                       | `DolphinProvider`, headless hooks, auth client integration, and session state                      |
+| `packages/ui`                  | `@dolphin-id/ui`                          | Default UI components, themes, locales, and copy overrides                                         |
+| `packages/server`              | `@dolphin-id/server`                      | Self-hosted nonce, verification, identity, JWT session, refresh, and middleware helpers            |
+| `packages/cli`                 | `@dolphin-id/cli`                         | App scaffolder for Next.js integrations                                                            |
+| `packages/hosted`              | `@dolphin-id/hosted`                      | Hosted nonce/session service primitives and development stores                                     |
+| `packages/adapter-*`           | `@dolphin-id/adapter-*`                   | Chain-specific wallet discovery, SIWX signing, and address normalization                           |
+| `apps/oidc-worker`             | `@dolphin-id/oidc-worker`                 | Cloudflare Worker issuer for auth routes, OIDC discovery/JWKS, client registration, and admin APIs |
+| `sdks/go`                      | Go SDK                                    | EVM/Sui verification and HS256 session claim helpers                                               |
+| `sdks/rust`                    | Rust SDK                                  | EVM/Sui verification and HS256 session claim helpers                                               |
+| `sdks/python`                  | Python SDK                                | EVM/Sui verification and HS256 session claim helpers                                               |
+| `apps/docs`                    | `@dolphin-id/docs`                        | Next.js docs site and console for Worker status, OIDC clients, integration setup, and chain policy |
+| `examples/next`                | `@dolphin-id/example-next`                | Full EVM/Sui login example with Playwright coverage                                                |
+| `examples/basic`               | `@dolphin-id/example-basic`               | Minimal adapter construction playground                                                            |
+| `examples/adapter-third-party` | `@dolphin-id/example-adapter-third-party` | Contract-tested sample external adapter                                                            |
 
 ## Development
 
@@ -233,6 +236,7 @@ Additional local commands:
 ```bash
 pnpm format:check
 pnpm --filter @dolphin-id/docs dev
+pnpm --filter @dolphin-id/oidc-worker deploy
 pnpm changeset
 pnpm version-packages
 ```
@@ -251,6 +255,7 @@ Start at the [documentation index](docs/README.md), or jump to:
 
 - [Product overview](docs/product-overview.md)
 - [Getting started](docs/getting-started.md)
+- [Integration manual](docs/integration-manual.md)
 - [API reference](docs/api-reference.md)
 - [Server SDKs](docs/server-sdks.md)
 - [CLI scaffolder](docs/cli.md)
